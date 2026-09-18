@@ -1,0 +1,448 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/*
+ * VIREX — sistema visual
+ * ─────────────────────────────────────────────────────────────
+ * La paleta sale del logo real (fondo #080808 + oro metálico, medido sobre
+ * la foto de perfil de @virex_barbershop) y del local: paredes de listones
+ * negros, líneas de LED en el techo, piso claro.
+ *
+ *   Obsidiana  #0B0A09  fondo           (el negro del logo, apenas cálido)
+ *   Marfil     #F2EDE3  texto           16,9:1 sobre obsidiana
+ *   Oro        #D6B36A  acento          9,9:1 — reservado para la acción
+ *                                        principal, el "ahora" y la fidelidad
+ *   + dos estados apagados (ok / alerta), nunca decorativos.
+ *
+ * El oro metálico completo (con brillos y sombras) vive sólo en la marca:
+ * logo, intro y tarjeta de fidelidad. En la interfaz se usa plano.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-obsidian: var(--obsidian);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ivory: var(--ivory);
+  --color-ivory-2: var(--ivory-2);
+  --color-ivory-3: var(--ivory-3);
+  --color-gold: var(--gold);
+  --color-gold-bright: var(--gold-bright);
+  --color-gold-deep: var(--gold-deep);
+  --color-ok: var(--ok);
+  --color-danger: var(--danger);
+  --color-whatsapp: var(--whatsapp);
+  --color-instagram: var(--instagram);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --animate-intro-line: intro-line 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+:root {
+  /* ── Marca ── */
+  --obsidian: #0b0a09;
+  --surface-1: #131210;
+  --surface-2: #1b1916;
+  --surface-3: #25221e;
+  --line: rgb(242 237 227 / 0.075);
+  --line-strong: rgb(242 237 227 / 0.14);
+  --ivory: #f2ede3;
+  --ivory-2: #bdb5a6;
+  --ivory-3: #8f887b;
+  --gold: #d6b36a;
+  --gold-bright: #f1dda6;
+  --gold-deep: #8c6a2f;
+  --ok: #86b891;
+  --danger: #e08579;
+  --whatsapp: #25d366;
+  --instagram: #e1306c;
+
+  /* Oro metálico: sólo para la marca (logo, intro, tarjeta de fidelidad). */
+  --gold-metal: linear-gradient(
+    135deg,
+    #7a5a26 0%,
+    #c9a24e 22%,
+    #f1dda6 42%,
+    #fff3c9 50%,
+    #d6b36a 62%,
+    #8c6a2f 100%
+  );
+
+  /* ── Mapeo a los tokens de shadcn ── */
+  --background: var(--obsidian);
+  --foreground: var(--ivory);
+  --card: var(--surface-1);
+  --card-foreground: var(--ivory);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--ivory);
+  --primary: var(--gold);
+  --primary-foreground: var(--obsidian);
+  --secondary: var(--surface-3);
+  --secondary-foreground: var(--ivory);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ivory-3);
+  --accent: var(--surface-3);
+  --accent-foreground: var(--ivory);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: rgb(214 179 106 / 0.55);
+  --chart-1: var(--gold);
+  --chart-2: var(--ivory-2);
+  --chart-3: var(--ivory-3);
+  --chart-4: var(--ok);
+  --chart-5: var(--gold-deep);
+  --radius: 0.75rem;
+  --sidebar: var(--obsidian);
+  --sidebar-foreground: var(--ivory-2);
+  --sidebar-primary: var(--gold);
+  --sidebar-primary-foreground: var(--obsidian);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--ivory);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--ring);
+
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    font-stretch: 100%;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01" 0;
+  }
+  /* Tailwind v4 ya no pone la manito en los botones: sin esto nada se siente clickeable. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+  ::selection {
+    background: rgb(214 179 106 / 0.35);
+    color: var(--ivory);
+  }
+}
+
+/* ── Tipografía: una sola familia (Archivo), jerarquía por ANCHO ──
+ * El wordmark de Virex es una sans extendida. Archivo tiene eje wdth 62–125:
+ * los títulos van expandidos (como el logo), el cuerpo en ancho normal y los
+ * datos densos (grilla de agenda) un poco condensados. Sin mezclar fuentes. */
+@utility font-display {
+  font-stretch: 125%;
+  font-weight: 760;
+  letter-spacing: 0.005em;
+}
+@utility font-wide {
+  font-stretch: 112.5%;
+}
+@utility font-narrow {
+  font-stretch: 87.5%;
+}
+@utility num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+@utility eyebrow {
+  font-stretch: 112.5%;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ivory-3);
+}
+
+/* Texto con el oro metálico del logo. */
+@utility text-gold-metal {
+  background: var(--gold-metal);
+  background-size: 200% 100%;
+  background-position: 30% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Las listas verticales de la pared del local, como textura. */
+@utility bg-slats {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgb(242 237 227 / 0.028) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+/* Superficie estándar de tarjeta. */
+@utility panel {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+}
+
+/* Scroll discreto. */
+@utility scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(242 237 227 / 0.12) transparent;
+}
+
+/* ─────────────────────────────────────────────────────────────
+ * INTRO — "las luces del local"
+ * Se prende la fila de LEDs del techo (diagonales, como en el local de
+ * Oncativo 2022), se dibuja el anillo, aparece la V y el destello ✦.
+ * Dura ~1,4 s, se saltea con un click o una tecla, y sólo se muestra una
+ * vez por sesión. Con reduced-motion no se muestra.
+ * ───────────────────────────────────────────────────────────── */
+.virex-intro {
+  display: none;
+}
+html[data-intro="play"] .virex-intro {
+  display: grid;
+}
+html[data-intro="play"] body {
+  overflow: hidden;
+}
+
+.virex-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  place-items: center;
+  background: var(--obsidian);
+  transition: opacity 420ms ease, visibility 0s linear 420ms;
+}
+.virex-intro.is-leaving {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.virex-intro__leds {
+  position: absolute;
+  inset: -20%;
+  transform: rotate(-24deg);
+  display: grid;
+  align-content: center;
+  gap: 9vh;
+  opacity: 0.9;
+}
+.virex-intro__led {
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 243 201 / 0.85) 18%,
+    rgb(255 250 235 / 0.95) 50%,
+    rgb(255 243 201 / 0.85) 82%,
+    transparent
+  );
+  box-shadow: 0 0 18px 2px rgb(241 221 166 / 0.35);
+  transform-origin: left center;
+  transform: scaleX(0);
+  animation: intro-line 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.virex-intro.is-leaving .virex-intro__led {
+  transition: opacity 300ms ease;
+  opacity: 0;
+}
+
+.virex-intro__stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  transition: transform 520ms cubic-bezier(0.65, 0, 0.35, 1);
+}
+/* Halo de obsidiana: las líneas de LED pasan alrededor de la marca, no por encima. */
+.virex-intro__stage::before {
+  content: "";
+  position: absolute;
+  inset: -90px -170px;
+  z-index: -1;
+  background: radial-gradient(closest-side, var(--obsidian) 55%, rgb(11 10 9 / 0.85) 70%, transparent);
+}
+.virex-intro__stage {
+  isolation: isolate;
+}
+.virex-intro.is-leaving .virex-intro__stage {
+  transform: translate(var(--fly-x, 0), var(--fly-y, 0)) scale(var(--fly-s, 0.4));
+}
+
+.virex-intro__ring {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: intro-draw 620ms cubic-bezier(0.65, 0, 0.35, 1) 220ms forwards;
+}
+.virex-intro__ring--inner {
+  animation-delay: 320ms;
+}
+.virex-intro__v {
+  clip-path: inset(0 0 100% 0);
+  animation: intro-reveal 380ms cubic-bezier(0.22, 1, 0.36, 1) 520ms forwards;
+}
+.virex-intro__wing {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scaleX(0.2);
+  animation: intro-wing 420ms cubic-bezier(0.22, 1, 0.36, 1) 700ms forwards;
+}
+.virex-intro__glint {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0) rotate(-45deg);
+  /* El destello ya "florece" en el keyframe (pico a 1.25): la curva sólo desacelera. */
+  animation: intro-glint 520ms cubic-bezier(0.25, 1, 0.5, 1) 860ms forwards;
+}
+.virex-intro__word {
+  opacity: 0;
+  letter-spacing: 0.6em;
+  animation: intro-word 560ms cubic-bezier(0.22, 1, 0.36, 1) 640ms forwards;
+}
+.virex-intro__sub {
+  opacity: 0;
+  animation: intro-fade 400ms ease 900ms forwards;
+}
+.virex-intro.is-leaving .virex-intro__word,
+.virex-intro.is-leaving .virex-intro__sub {
+  transition: opacity 200ms ease;
+  opacity: 0 !important;
+}
+
+@keyframes intro-line {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes intro-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes intro-reveal {
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes intro-wing {
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+@keyframes intro-glint {
+  60% {
+    transform: scale(1.25) rotate(0deg);
+  }
+  to {
+    transform: scale(1) rotate(0deg);
+  }
+}
+@keyframes intro-word {
+  to {
+    opacity: 1;
+    letter-spacing: 0.02em;
+  }
+}
+@keyframes intro-fade {
+  to {
+    opacity: 1;
+  }
+}
+
+/* El destello que respira en la marca del sidebar cuando el agente está activo. */
+@keyframes glint-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(134 184 145 / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgb(134 184 145 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(134 184 145 / 0);
+  }
+}
+@keyframes now-line {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
