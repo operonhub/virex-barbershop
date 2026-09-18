@@ -52,6 +52,12 @@ Verificación visual (Playwright con el Chrome instalado, sin descargar Chromium
 en `.env.local`). Todos esperan el dev server en el puerto 3060.
 En Windows con Git Bash, anteponer `MSYS_NO_PATHCONV=1` (si no, `/agenda` llega como ruta de disco).
 
+**En entornos en la nube (Codex cloud, CI):** no hay Chrome instalado, así que los scripts de
+Playwright no corren (usan `channel: "chrome"`); la verificación ahí es `tsc` + `lint` +
+`npm test` + `npm run test:db`, que no necesitan navegador ni red. `npm run build` descarga
+la fuente Archivo de Google Fonts (`next/font/google`): sin acceso a internet falla por eso,
+no por el código.
+
 ## Mapa del código
 
 ```
