@@ -54,7 +54,7 @@ export function Sidebar({ info }: { info: ShellInfo }) {
             L
           </span>
           <span className="min-w-0 leading-tight">
-            <span className="block truncate text-[13px] font-medium text-ivory">Leo</span>
+            <span className="block truncate text-[13px] font-medium text-ivory">Santi</span>
             <span className="block text-[11px] text-ivory-3">Dueño</span>
           </span>
         </div>

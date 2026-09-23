@@ -69,7 +69,7 @@ export default async function HoyPage() {
     <PageBody>
       <PageHeader
         eyebrow={formatDayLong(d.today)}
-        title={`${greeting}, Leo`}
+        title={`${greeting}, Santi`}
         description={
           d.open
             ? left > 0

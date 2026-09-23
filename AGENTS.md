@@ -22,7 +22,7 @@ Mantenerlo así.
 
 - **Esqueleto funcional en modo demo:** todas las pantallas funcionan con datos de ejemplo
   realistas generados en memoria (`src/lib/data/seed.ts`). No hay base conectada todavía.
-- Barberos (Leo / Thiago / Bruno), precios y duraciones son **supuestos**: se confirman con el
+- Barberos (Santi / Thiago / Bruno), precios y duraciones son **supuestos**: se confirman con el
   cliente (ver `docs/PLAN.md` → "Preguntas").
 - Lo real, tomado del Instagram del local: dirección, horario (mar–sáb 11–20) y la tarjeta de
   fidelidad (5 cortes → el 6to al 50 %).

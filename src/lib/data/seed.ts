@@ -106,7 +106,7 @@ function hashString(s: string) {
 /* ── Catálogo ─────────────────────────────────────────────────────────── */
 
 export const STAFF: Staff[] = [
-  { id: "st-leo", name: "Leo", role: "dueno", commissionPct: 0, active: true, skipsServiceIds: [] },
+  { id: "st-leo", name: "Santi", role: "dueno", commissionPct: 0, active: true, skipsServiceIds: [] },
   { id: "st-thiago", name: "Thiago", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: ["sv-color"] },
   { id: "st-bruno", name: "Bruno", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: ["sv-color"] },
 ]
@@ -549,7 +549,7 @@ export function buildDemo(real = new Date()): DemoState {
     { id: "cv-ezequiel", channel: "whatsapp", clientId: byFirstName("Ezequiel").id, participantName: byFirstName("Ezequiel").name, participantHandle: null, mode: "humano", unread: 2, needsHuman: true, handoffReason: "Reclamo por un corte" },
     [
       [26, "cliente", "Hola, el corte de ayer me quedó desparejo del lado izquierdo, se nota bastante"],
-      [26, "ia", "Uh Ezequiel, lamento mucho eso. Ya le aviso a Leo para que lo vea personalmente y te escriba en un rato para solucionarlo. 🙏", "derivado_humano"],
+      [26, "ia", "Uh Ezequiel, lamento mucho eso. Ya le aviso a Santi para que lo vea personalmente y te escriba en un rato para solucionarlo. 🙏", "derivado_humano"],
       [21, "cliente", "ok espero"],
       [9, "cliente", "?"],
     ]
@@ -558,17 +558,17 @@ export function buildDemo(real = new Date()): DemoState {
     { id: "cv-matias", channel: "whatsapp", clientId: matias.id, participantName: matias.name, participantHandle: null, mode: "ia", unread: 0, needsHuman: false, handoffReason: null },
     [
       [39, "cliente", `Buenas! tenés turno para ${relDay(tomorrowOpen)} a la tarde? corte y barba`],
-      [38, "ia", `¡Hola Matías! 👋 ${relDay(tomorrowOpen)[0].toUpperCase() + relDay(tomorrowOpen).slice(1)} para Corte + barba tengo 17:00 con Thiago, 18:00 con Bruno o 19:00 con Leo. ¿Cuál te queda mejor?`, "consulta_respondida"],
+      [38, "ia", `¡Hola Matías! 👋 ${relDay(tomorrowOpen)[0].toUpperCase() + relDay(tomorrowOpen).slice(1)} para Corte + barba tengo 17:00 con Thiago, 18:00 con Bruno o 19:00 con Santi. ¿Cuál te queda mejor?`, "consulta_respondida"],
       [32, "cliente", "18 con bruno"],
       [31, "ia", `Listo ✂️ Te agendé Corte + barba ${relDay(tomorrowOpen)} a las 18:00 con Bruno. Te escribo una hora antes para recordártelo. ¡Te esperamos en Oncativo 2022!`, "turno_creado"],
       [30, "cliente", "genial gracias"],
     ]
   )
   thread(
-    { id: "cv-tomi", channel: "instagram", clientId: null, participantName: "Tomi Fernández", participantHandle: "tomi.fdz", mode: "humano", unread: 1, needsHuman: true, handoffReason: "Consulta de color: Leo tiene que ver el pelo" },
+    { id: "cv-tomi", channel: "instagram", clientId: null, participantName: "Tomi Fernández", participantHandle: "tomi.fdz", mode: "humano", unread: 1, needsHuman: true, handoffReason: "Consulta de color: Santi tiene que ver el pelo" },
     [
       [96, "cliente", "Hola! cuánto sale el platinado? tengo el pelo bastante oscuro"],
-      [95, "ia", "¡Hola Tomi! El platinado arranca en $45.000 y lleva unas 2 horas. Con el pelo oscuro a veces hace falta una sesión extra, así que el precio final lo define Leo cuando lo vea. Le paso tu consulta para que te escriba él 🙌", "derivado_humano"],
+      [95, "ia", "¡Hola Tomi! El platinado arranca en $45.000 y lleva unas 2 horas. Con el pelo oscuro a veces hace falta una sesión extra, así que el precio final lo define Santi cuando lo vea. Le paso tu consulta para que te escriba él 🙌", "derivado_humano"],
       [13, "cliente", "dale, le mando una foto?"],
     ]
   )
@@ -592,9 +592,9 @@ export function buildDemo(real = new Date()): DemoState {
     { id: "cv-bauti", channel: "whatsapp", clientId: bautista.id, participantName: "Carla (mamá de Bauti)", participantHandle: null, mode: "ia", unread: 0, needsHuman: false, handoffReason: null },
     [
       [262, "cliente", "Hola! quería sacar turno para mi hijo de 8 años, el sábado a la mañana"],
-      [261, "ia", "¡Hola Carla! El sábado a las 11:00 tengo lugar con Leo para Corte niño ($11.000, media hora). ¿Lo reservo a nombre de Bautista?"],
+      [261, "ia", "¡Hola Carla! El sábado a las 11:00 tengo lugar con Santi para Corte niño ($11.000, media hora). ¿Lo reservo a nombre de Bautista?"],
       [255, "cliente", "si porfa"],
-      [254, "ia", `Listo, quedó reservado el sábado a las 11:00 con Leo para Bautista ✂️ Te lo confirmo el viernes por este chat.`, "turno_creado"],
+      [254, "ia", `Listo, quedó reservado el sábado a las 11:00 con Santi para Bautista ✂️ Te lo confirmo el viernes por este chat.`, "turno_creado"],
     ]
   )
   thread(
@@ -614,7 +614,7 @@ export function buildDemo(real = new Date()): DemoState {
   thread(
     { id: "cv-joaquin", channel: "whatsapp", clientId: byFirstName("Joaquín").id, participantName: byFirstName("Joaquín").name, participantHandle: null, mode: "humano", unread: 0, needsHuman: false, handoffReason: null },
     [
-      [60 * 26, "cliente", "Leo, el sábado podés a las 12? es para mi casamiento, quiero algo prolijo"],
+      [60 * 26, "cliente", "Santi, el sábado podés a las 12? es para mi casamiento, quiero algo prolijo"],
       [60 * 25, "staff", "Joaco, te guardé el sábado 12:00 👌 Vení con el pelo lavado y hacemos corte + barba a navaja.", undefined, "st-leo"],
       [60 * 25 - 5, "cliente", "crack, gracias!"],
     ]
@@ -665,7 +665,7 @@ export function buildDemo(real = new Date()): DemoState {
       },
       rules: [
         "Nunca inventes descuentos ni promociones que no existen.",
-        "Las consultas de color o platinado se derivan a Leo: el precio depende de ver el pelo.",
+        "Las consultas de color o platinado se derivan a Santi: el precio depende de ver el pelo.",
         "Si alguien se queja de un corte, pedí disculpas y derivá a una persona de inmediato.",
         "Por Instagram, pedí nombre y teléfono antes de confirmar un turno.",
       ],

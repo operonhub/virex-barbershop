@@ -12,7 +12,7 @@ type Line =
   | { role: "assistant"; text: string; action: AgentActionKind | null }
   | { role: "error"; text: string }
 
-const STARTERS = ["Hola! tenés turno mañana a la tarde?", "cuánto sale corte y barba?", "me quiero cortar el sábado con Leo"]
+const STARTERS = ["Hola! tenés turno mañana a la tarde?", "cuánto sale corte y barba?", "me quiero cortar el sábado con Santi"]
 
 /**
  * Chat de prueba con el agente real. Es la mejor demo posible para el dueño:
