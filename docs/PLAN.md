@@ -66,18 +66,8 @@ WhatsApp / Instagram
 
 ## Fases hasta producción
 
-1. **Confirmar datos con Virex** (domingo): servicios, precios, duraciones, barberos,
-   comisiones, horarios reales. Todo lo marcado ⚠ en Ajustes.
-2. **Supabase + login:** aplicar `0001_core.sql`, reemplazar el cuerpo de
-   `lib/data/repo.ts` y las acciones por consultas, usuarios para el equipo.
-3. **Zernio real:** conectar el WhatsApp del local (Coexistence: el número sigue andando en
-   el celular) e Instagram, registrar el webhook, backfill de conversaciones.
-4. **Agente en producción:** activar por canal, empezar en "sólo responde" y habilitar
-   agendar cuando el dueño confíe. Medir costo por conversación con `agent_runs`.
-5. **Recordatorios:** WhatsApp el día anterior (necesita plantilla aprobada por Meta, porque
-   cae fuera de la ventana de 24 h). Baja los no-show.
-6. **Mercado Pago (si cobran seña):** link de pago al reservar, webhook que confirma.
-7. **Deploy:** repo privado en operonhub + Vercel propio (como el resto de las demos).
+Reemplazado por **[`ROADMAP.md`](ROADMAP.md)** (23/09): orden por día hasta la entrega del
+02/10, deploy en Railway, agente multi-proveedor, seña con Mercado Pago y recordatorios.
 
 ## Preguntas para el domingo
 

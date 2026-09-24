@@ -25,7 +25,7 @@ export interface SlotQuery {
   service: Pick<Service, "id" | "durationMin">
   staff: Pick<Staff, "id" | "skipsServiceIds">
   appointments: Appointment[]
-  /** Cada cuánto se ofrecen horarios. 15 min da flexibilidad sin abrumar. */
+  /** Cada cuánto se ofrecen horarios. Por defecto, la grilla del local (turnos de una hora). */
   stepMin?: number
   /** Anticipación mínima para reservar hoy (no ofrecer "en 5 minutos"). */
   leadMin?: number
@@ -41,7 +41,7 @@ export function freeSlots({
   service,
   staff,
   appointments,
-  stepMin = 15,
+  stepMin = BRAND.booking.slotStepMin,
   leadMin = 30,
   now = new Date(),
 }: SlotQuery): string[] {

@@ -9,10 +9,16 @@ import type { AgentActionKind } from "@/lib/domain/types"
 
 type Line =
   | { role: "user"; text: string }
-  | { role: "assistant"; text: string; action: AgentActionKind | null }
+  | { role: "assistant"; text: string; action: AgentActionKind | null; meta: string }
   | { role: "error"; text: string }
 
-const STARTERS = ["Hola! tenés turno mañana a la tarde?", "cuánto sale corte y barba?", "me quiero cortar el sábado con Santi"]
+const STARTERS = ["Hola! tenés turno mañana a la tarde?", "cuánto sale corte y barba?", "me quiero cortar el sábado con Sebastián"]
+
+/** Modelo, tokens y costo de la respuesta: para comparar proveedores con los mismos mensajes. */
+function runMeta(res: { model: string; tokens: number; costUsd: number | null }) {
+  const cost = res.costUsd === null ? "" : ` · US$ ${res.costUsd.toLocaleString("es-AR", { maximumSignificantDigits: 2 })}`
+  return `${res.model} · ${res.tokens.toLocaleString("es-AR")} tokens${cost}`
+}
 
 /**
  * Chat de prueba con el agente real. Es la mejor demo posible para el dueño:
@@ -39,7 +45,10 @@ export function AgentPlayground({ agentName, configured, reason }: { agentName: 
         .filter((l): l is Exclude<Line, { role: "error" }> => l.role !== "error")
         .map((l) => ({ role: l.role, text: l.text }))
       const res = await testAgent(history)
-      setLines((cur) => [...cur, res.ok ? { role: "assistant", text: res.reply, action: res.action } : { role: "error", text: res.reason }])
+      setLines((cur) => [
+        ...cur,
+        res.ok ? { role: "assistant", text: res.reply, action: res.action, meta: runMeta(res) } : { role: "error", text: res.reason },
+      ])
     })
   }
 
@@ -109,6 +118,7 @@ export function AgentPlayground({ agentName, configured, reason }: { agentName: 
                   <CalendarCheck2 className="size-3.5" /> Turno creado en la agenda
                 </span>
               )}
+              {l.role === "assistant" && <span className="mt-1 px-1 text-[10.5px] text-ivory-3 num">{l.meta}</span>}
             </div>
           )
         )}
@@ -135,7 +145,7 @@ export function AgentPlayground({ agentName, configured, reason }: { agentName: 
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           disabled={!configured}
-          placeholder={configured ? "Escribí como un cliente…" : "Falta la clave de Anthropic"}
+          placeholder={configured ? "Escribí como un cliente…" : "Falta la clave de la IA"}
           className="h-10 flex-1 rounded-lg border border-line-strong bg-surface-2 px-3 text-[14px] text-ivory placeholder:text-ivory-3 focus:border-gold/50 focus:outline-none disabled:opacity-50"
         />
         <Button type="submit" size="icon-lg" disabled={!configured || !draft.trim() || pending} aria-label="Enviar">

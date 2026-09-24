@@ -14,7 +14,7 @@ import type { AgentActionKind } from "@/lib/domain/types"
  * que hay que mostrarle al dueño.
  */
 export async function testAgent(history: TurnInput[]): Promise<
-  | { ok: true; reply: string; action: AgentActionKind | null; tokens: number; cached: number; model: string }
+  | { ok: true; reply: string; action: AgentActionKind | null; tokens: number; model: string; costUsd: number | null }
   | { ok: false; reason: string }
 > {
   if (!history.length || history[history.length - 1].role !== "user") {
@@ -42,7 +42,7 @@ export async function testAgent(history: TurnInput[]): Promise<
     reply: result.reply,
     action,
     tokens: result.usage.input + result.usage.output + result.usage.cacheRead + result.usage.cacheWrite,
-    cached: result.usage.cacheRead,
     model: result.model,
+    costUsd: result.costUsd,
   }
 }

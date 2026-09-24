@@ -41,7 +41,7 @@ import type {
  */
 
 /** Subirlo al cambiar el generador: invalida el estado demo guardado en memoria. */
-export const SEED_VERSION = 4
+export const SEED_VERSION = 5
 
 export interface DemoState {
   /** Instante que la demo considera "ahora". Ver `demoClock`. */
@@ -106,19 +106,16 @@ function hashString(s: string) {
 /* ── Catálogo ─────────────────────────────────────────────────────────── */
 
 export const STAFF: Staff[] = [
-  { id: "st-leo", name: "Santi", role: "dueno", commissionPct: 0, active: true, skipsServiceIds: [] },
-  { id: "st-thiago", name: "Thiago", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: ["sv-color"] },
-  { id: "st-bruno", name: "Bruno", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: ["sv-color"] },
+  // Barberos reales (24/09). Quién es el dueño y las comisiones son supuestos a confirmar.
+  { id: "st-santiago", name: "Santiago", role: "dueno", commissionPct: 0, active: true, skipsServiceIds: [] },
+  { id: "st-sebastian", name: "Sebastián", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: [] },
+  { id: "st-nehemias", name: "Nehemías", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: [] },
 ]
 
 export const SERVICES: Service[] = [
-  { id: "sv-corte", name: "Corte", category: "corte", durationMin: 40, price: 14000, countsForLoyalty: true, active: true },
-  { id: "sv-corte-barba", name: "Corte + barba", category: "combo", durationMin: 60, price: 18000, countsForLoyalty: true, active: true },
-  { id: "sv-diseno", name: "Corte + diseño", category: "corte", durationMin: 50, price: 16000, countsForLoyalty: true, active: true },
-  { id: "sv-barba", name: "Barba", category: "barba", durationMin: 25, price: 8000, countsForLoyalty: false, active: true },
-  { id: "sv-nino", name: "Corte niño", category: "corte", durationMin: 30, price: 11000, countsForLoyalty: true, active: true },
-  { id: "sv-cejas", name: "Cejas", category: "extra", durationMin: 10, price: 3000, countsForLoyalty: false, active: true },
-  { id: "sv-color", name: "Platinado / color", category: "color", durationMin: 120, price: 45000, countsForLoyalty: false, active: true },
+  // Servicios y precios reales (24/09). Todos los turnos duran una hora.
+  { id: "sv-corte", name: "Corte", category: "corte", durationMin: 60, price: 15000, countsForLoyalty: true, active: true },
+  { id: "sv-corte-barba", name: "Corte + barba", category: "combo", durationMin: 60, price: 20000, countsForLoyalty: true, active: true },
 ]
 
 const PRODUCTS: [string, number][] = [
@@ -257,19 +254,19 @@ export function buildDemo(real = new Date()): DemoState {
   const franco = byFirstName("Franco")
   const bautista = byFirstName("Bautista")
   const story = {
-    matias: book(tomorrowOpen, "18:00", "st-bruno", "sv-corte-barba", matias.id, {
+    matias: book(tomorrowOpen, "18:00", "st-nehemias", "sv-corte-barba", matias.id, {
       source: "agente",
       status: "confirmado",
       conversationId: "cv-matias",
       createdAt: minutesAgo(30),
     }),
-    franco: book(today, "19:15", "st-thiago", "sv-corte", franco.id, {
+    franco: book(today, "19:00", "st-sebastian", "sv-corte", franco.id, {
       source: "agente",
       conversationId: "cv-franco",
       createdAt: minutesAgo(60 * 24 * 2),
-      notes: "Reprogramado por el agente (antes 17:30).",
+      notes: "Reprogramado por el agente (antes 17:00).",
     }),
-    bauti: book(nextSaturday, "11:00", "st-leo", "sv-nino", bautista.id, {
+    bauti: book(nextSaturday, "11:00", "st-santiago", "sv-corte", bautista.id, {
       source: "agente",
       status: "pendiente",
       conversationId: "cv-bauti",
@@ -294,13 +291,8 @@ export function buildDemo(real = new Date()): DemoState {
   }
 
   const SERVICE_WEIGHTS: [string, number][] = [
-    ["sv-corte", 44],
-    ["sv-corte-barba", 26],
-    ["sv-diseno", 9],
-    ["sv-barba", 9],
-    ["sv-nino", 6],
-    ["sv-cejas", 3],
-    ["sv-color", 3],
+    ["sv-corte", 62],
+    ["sv-corte-barba", 38],
   ]
   const totalWeight = SERVICE_WEIGHTS.reduce((s, [, w]) => s + w, 0)
   const pickService = (staff: Staff) => {
@@ -549,7 +541,7 @@ export function buildDemo(real = new Date()): DemoState {
     { id: "cv-ezequiel", channel: "whatsapp", clientId: byFirstName("Ezequiel").id, participantName: byFirstName("Ezequiel").name, participantHandle: null, mode: "humano", unread: 2, needsHuman: true, handoffReason: "Reclamo por un corte" },
     [
       [26, "cliente", "Hola, el corte de ayer me quedó desparejo del lado izquierdo, se nota bastante"],
-      [26, "ia", "Uh Ezequiel, lamento mucho eso. Ya le aviso a Santi para que lo vea personalmente y te escriba en un rato para solucionarlo. 🙏", "derivado_humano"],
+      [26, "ia", "Uh Ezequiel, lamento mucho eso. Ya le aviso a Santiago para que lo vea personalmente y te escriba en un rato para solucionarlo. 🙏", "derivado_humano"],
       [21, "cliente", "ok espero"],
       [9, "cliente", "?"],
     ]
@@ -558,25 +550,25 @@ export function buildDemo(real = new Date()): DemoState {
     { id: "cv-matias", channel: "whatsapp", clientId: matias.id, participantName: matias.name, participantHandle: null, mode: "ia", unread: 0, needsHuman: false, handoffReason: null },
     [
       [39, "cliente", `Buenas! tenés turno para ${relDay(tomorrowOpen)} a la tarde? corte y barba`],
-      [38, "ia", `¡Hola Matías! 👋 ${relDay(tomorrowOpen)[0].toUpperCase() + relDay(tomorrowOpen).slice(1)} para Corte + barba tengo 17:00 con Thiago, 18:00 con Bruno o 19:00 con Santi. ¿Cuál te queda mejor?`, "consulta_respondida"],
-      [32, "cliente", "18 con bruno"],
-      [31, "ia", `Listo ✂️ Te agendé Corte + barba ${relDay(tomorrowOpen)} a las 18:00 con Bruno. Te escribo una hora antes para recordártelo. ¡Te esperamos en Oncativo 2022!`, "turno_creado"],
+      [38, "ia", `¡Hola Matías! 👋 ${relDay(tomorrowOpen)[0].toUpperCase() + relDay(tomorrowOpen).slice(1)} para Corte + barba tengo 17:00 con Sebastián, 18:00 con Nehemías o 19:00 con Santiago. ¿Cuál te queda mejor?`, "consulta_respondida"],
+      [32, "cliente", "18 con nehe"],
+      [31, "ia", `Listo ✂️ Te agendé Corte + barba ${relDay(tomorrowOpen)} a las 18:00 con Nehemías. Te escribo una hora antes para recordártelo. ¡Te esperamos en Oncativo 2022!`, "turno_creado"],
       [30, "cliente", "genial gracias"],
     ]
   )
   thread(
-    { id: "cv-tomi", channel: "instagram", clientId: null, participantName: "Tomi Fernández", participantHandle: "tomi.fdz", mode: "humano", unread: 1, needsHuman: true, handoffReason: "Consulta de color: Santi tiene que ver el pelo" },
+    { id: "cv-tomi", channel: "instagram", clientId: null, participantName: "Tomi Fernández", participantHandle: "tomi.fdz", mode: "humano", unread: 1, needsHuman: true, handoffReason: "Pregunta por platinado: no está en la lista de servicios" },
     [
-      [96, "cliente", "Hola! cuánto sale el platinado? tengo el pelo bastante oscuro"],
-      [95, "ia", "¡Hola Tomi! El platinado arranca en $45.000 y lleva unas 2 horas. Con el pelo oscuro a veces hace falta una sesión extra, así que el precio final lo define Santi cuando lo vea. Le paso tu consulta para que te escriba él 🙌", "derivado_humano"],
+      [96, "cliente", "Hola! hacen platinado? tengo el pelo bastante oscuro"],
+      [95, "ia", "¡Hola Tomi! Por ahora en el local hacemos corte y corte + barba. Igual le paso tu consulta a Santiago para que te responda él 🙌", "derivado_humano"],
       [13, "cliente", "dale, le mando una foto?"],
     ]
   )
   thread(
     { id: "cv-franco", channel: "whatsapp", clientId: franco.id, participantName: franco.name, participantHandle: null, mode: "ia", unread: 0, needsHuman: false, handoffReason: null },
     [
-      [142, "cliente", "che hoy no llego a las 17:30, se puede más tarde?"],
-      [141, "ia", "Sin drama, Franco. Te lo pasé a las 19:15 con Thiago, mismo servicio (Corte). ¿Te sirve?", "turno_reprogramado"],
+      [142, "cliente", "che hoy no llego a las 17, se puede más tarde?"],
+      [141, "ia", "Sin drama, Franco. Te lo pasé a las 19:00 con Sebastián, mismo servicio (Corte). ¿Te sirve?", "turno_reprogramado"],
       [124, "cliente", "joya gracias"],
       [123, "ia", "¡De nada! Te esperamos 💈"],
     ]
@@ -592,9 +584,9 @@ export function buildDemo(real = new Date()): DemoState {
     { id: "cv-bauti", channel: "whatsapp", clientId: bautista.id, participantName: "Carla (mamá de Bauti)", participantHandle: null, mode: "ia", unread: 0, needsHuman: false, handoffReason: null },
     [
       [262, "cliente", "Hola! quería sacar turno para mi hijo de 8 años, el sábado a la mañana"],
-      [261, "ia", "¡Hola Carla! El sábado a las 11:00 tengo lugar con Santi para Corte niño ($11.000, media hora). ¿Lo reservo a nombre de Bautista?"],
+      [261, "ia", "¡Hola Carla! El sábado a las 11:00 tengo lugar con Santiago para un corte ($15.000, una hora). ¿Lo reservo a nombre de Bautista?"],
       [255, "cliente", "si porfa"],
-      [254, "ia", `Listo, quedó reservado el sábado a las 11:00 con Santi para Bautista ✂️ Te lo confirmo el viernes por este chat.`, "turno_creado"],
+      [254, "ia", `Listo, quedó reservado el sábado a las 11:00 con Santiago para Bautista ✂️ Te lo confirmo el viernes por este chat.`, "turno_creado"],
     ]
   )
   thread(
@@ -615,7 +607,7 @@ export function buildDemo(real = new Date()): DemoState {
     { id: "cv-joaquin", channel: "whatsapp", clientId: byFirstName("Joaquín").id, participantName: byFirstName("Joaquín").name, participantHandle: null, mode: "humano", unread: 0, needsHuman: false, handoffReason: null },
     [
       [60 * 26, "cliente", "Santi, el sábado podés a las 12? es para mi casamiento, quiero algo prolijo"],
-      [60 * 25, "staff", "Joaco, te guardé el sábado 12:00 👌 Vení con el pelo lavado y hacemos corte + barba a navaja.", undefined, "st-leo"],
+      [60 * 25, "staff", "Joaco, te guardé el sábado 12:00 👌 Vení con el pelo lavado y hacemos corte + barba a navaja.", undefined, "st-santiago"],
       [60 * 25 - 5, "cliente", "crack, gracias!"],
     ]
   )
@@ -665,7 +657,7 @@ export function buildDemo(real = new Date()): DemoState {
       },
       rules: [
         "Nunca inventes descuentos ni promociones que no existen.",
-        "Las consultas de color o platinado se derivan a Santi: el precio depende de ver el pelo.",
+        "Por ahora el local hace sólo corte y corte + barba. Si piden otra cosa (color, diseño, barba sola), decilo y derivá a Santiago.",
         "Si alguien se queja de un corte, pedí disculpas y derivá a una persona de inmediato.",
         "Por Instagram, pedí nombre y teléfono antes de confirmar un turno.",
       ],

@@ -1,8 +1,9 @@
 /**
  * Datos del negocio. Todo lo que dice "Virex" en la app sale de acá.
  *
- * Fuente: bio de @virex_barbershop (relevada el 2026-09-17). Lo marcado
- * `aConfirmar` salió de supuestos razonables y se valida con el cliente.
+ * Fuente: bio de @virex_barbershop (2026-09-17) y datos que pasó Santiago
+ * (cliente del local hace 10 años) el 2026-09-24: horario, barberos, precios y
+ * turnos de una hora. Las comisiones siguen siendo un supuesto.
  *
  * Mantenerlo en un solo archivo es deliberado: si mañana esta app se
  * reutiliza para otra barbería, el cambio de marca empieza por acá (más los
@@ -24,6 +25,13 @@ export const BRAND = {
     days: [2, 3, 4, 5, 6],
     open: "11:00",
     close: "20:00",
+  },
+  /**
+   * Los turnos duran una hora: el agente y la reserva web ofrecen horarios
+   * en punto. Desde el panel se puede cargar a cualquier hora (walk-in).
+   */
+  booking: {
+    slotStepMin: 60,
   },
   /** Tarjeta de fidelidad física que ya usan: 5 cortes sellados → el 6to al 50%. */
   loyalty: {

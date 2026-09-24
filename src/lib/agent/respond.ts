@@ -17,7 +17,7 @@ import type { AgentActionKind, Conversation } from "@/lib/domain/types"
  *                                              │
  *                          ¿modo IA? ¿canal activo? ¿red de seguridad?
  *                                              │
- *                              runAgent (Claude + herramientas)
+ *                              runAgent (modelo + herramientas)
  *                                              │
  *                   guarda el mensaje ─▶ sendMessage (Zernio, Idempotency-Key)
  *

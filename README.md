@@ -44,11 +44,11 @@ WhatsApp / Instagram
      Zernio ──webhook firmado──▶ /api/zernio/webhook ──▶ base (mensaje)
         ▲                               │ after(): se responde 200 al toque
         │                               ▼
-        └──── sendMessage ◀──── agente (Claude + herramientas) ──▶ agenda
+        └──── sendMessage ◀──── agente (IA + herramientas) ──▶ agenda
 ```
 
-- **Claude Opus 5** por defecto (configurable con `AGENT_MODEL`), con fallback del lado del
-  servidor si el modelo rechaza un mensaje.
+- **Proveedor intercambiable:** Gemini 3.5 Flash-Lite por defecto (centavos por mes) o
+  Claude Haiku 4.5, con `AGENT_PROVIDER` / `AGENT_MODEL`, sin tocar código.
 - **7 herramientas** con esquema estricto: consultar disponibilidad, crear / reprogramar /
   cancelar turno, ver los turnos del cliente, consultar la tarjeta de fidelidad y derivar a una
   persona. **El modelo propone, el código decide:** cada herramienta revalida permisos, que el
@@ -78,7 +78,7 @@ local (paredes de listones negros, líneas de LED en el techo).
 
 ```bash
 npm install
-cp .env.example .env.local   # opcional: ANTHROPIC_API_KEY para probar el agente
+cp .env.example .env.local   # opcional: GEMINI_API_KEY para probar el agente
 npm run dev                  # http://localhost:3060
 ```
 
@@ -100,7 +100,7 @@ Scripts de verificación con Playwright (usan el Chrome instalado) en [`scripts/
 ## Stack
 
 Next.js 16 (App Router, Turbopack) · React 19 · TypeScript · Tailwind CSS v4 · shadcn/ui
-(Base UI) + Magic UI · Recharts · `@anthropic-ai/sdk` · Zernio · Supabase (Postgres + RLS,
+(Base UI) + Magic UI · Recharts · `@google/genai` + `@anthropic-ai/sdk` · Zernio · Supabase (Postgres + RLS,
 esquema listo) · Vitest · PGlite · Playwright.
 
 ## Estructura

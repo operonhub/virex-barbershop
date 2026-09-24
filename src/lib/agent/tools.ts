@@ -1,17 +1,19 @@
 import "server-only"
-import type Anthropic from "@anthropic-ai/sdk"
 import { db, newId } from "@/lib/data/repo"
 import { freeSlots, freeSlotsAnyStaff, isOpen } from "@/lib/domain/slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import { addDays, at, dayKey, formatDayLong, hm } from "@/lib/time"
 import type { AgentActionKind, Channel, Service, Staff } from "@/lib/domain/types"
+import type { ToolSpec, TurnInput } from "./providers/types"
+import { clientAgreedTo } from "./consent"
 
 /**
  * Herramientas del agente: lo ÚNICO con lo que la IA puede tocar datos.
  *
  * Tres reglas:
- *  1. `strict: true` en todas: la API garantiza que el input respeta el
- *     schema, así que acá no hay que adivinar formatos.
+ *  1. Se definen UNA vez, en JSON Schema; cada proveedor las traduce (Claude
+ *     con `strict: true`, Gemini con `parametersJsonSchema`). Igual se
+ *     revalida todo acá: no todos los modelos garantizan el schema.
  *  2. Cada herramienta revalida lo importante (permisos, horario libre, que
  *     el turno sea de ESTE cliente). El modelo propone, el código decide.
  *  3. Los resultados son JSON chico y en castellano: el modelo los lee para
@@ -27,6 +29,8 @@ export interface ToolContext {
   participantName: string
   channel: Channel
   now: Date
+  /** La conversación hasta el último mensaje del cliente: para saber qué pidió o aceptó. */
+  history?: TurnInput[]
 }
 
 export interface ToolOutcome {
@@ -42,7 +46,7 @@ export interface ToolOutcome {
 const DATE = { type: "string", description: "Fecha en formato AAAA-MM-DD." } as const
 const TIME = { type: "string", description: "Hora en formato HH:MM, 24 h." } as const
 
-export function toolDefinitions(services: Service[], staff: Staff[]): Anthropic.Beta.BetaTool[] {
+export function toolDefinitions(services: Service[], staff: Staff[]): ToolSpec[] {
   const serviceIds = services.filter((s) => s.active).map((s) => s.id)
   const staffIds = staff.filter((s) => s.active).map((s) => s.id)
 
@@ -50,16 +54,19 @@ export function toolDefinitions(services: Service[], staff: Staff[]): Anthropic.
     {
       name: "consultar_disponibilidad",
       description:
-        "Devuelve los horarios libres para un servicio en una fecha, con un barbero puntual o con cualquiera. Usala SIEMPRE antes de ofrecer horarios.",
-      strict: true,
-      input_schema: {
+        "Devuelve los horarios libres para un servicio en una fecha, con un barbero puntual o con cualquiera. Usala SIEMPRE antes de ofrecer horarios, y de nuevo cada vez que el cliente pida otra franja: devuelve pocas opciones, así que no afirmes que no hay lugar a una hora sin haberla consultado con desde_hora.",
+      parameters: {
         type: "object",
         properties: {
           fecha: DATE,
           servicio_id: { type: "string", enum: serviceIds },
           barbero_id: { type: "string", enum: [...staffIds, "cualquiera"] },
+          desde_hora: {
+            type: "string",
+            description: 'Hora mínima HH:MM si el cliente pide una franja ("a la tarde" = 14:00, "después de las 6" = 18:00, "tipo 17" = 17:00). Cadena vacía si no importa.',
+          },
         },
-        required: ["fecha", "servicio_id", "barbero_id"],
+        required: ["fecha", "servicio_id", "barbero_id", "desde_hora"],
         additionalProperties: false,
       },
     },
@@ -67,8 +74,7 @@ export function toolDefinitions(services: Service[], staff: Staff[]): Anthropic.
       name: "crear_turno",
       description:
         "Agenda un turno confirmado. Sólo cuando el cliente ya eligió servicio, fecha, hora y barbero. Si no es cliente registrado, pasá su nombre y teléfono.",
-      strict: true,
-      input_schema: {
+      parameters: {
         type: "object",
         properties: {
           fecha: DATE,
@@ -85,14 +91,12 @@ export function toolDefinitions(services: Service[], staff: Staff[]): Anthropic.
     {
       name: "turnos_del_cliente",
       description: "Lista los próximos turnos del cliente de esta conversación, con su id.",
-      strict: true,
-      input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
     },
     {
       name: "reprogramar_turno",
       description: "Mueve un turno del cliente a otra fecha y hora (mismo servicio y barbero).",
-      strict: true,
-      input_schema: {
+      parameters: {
         type: "object",
         properties: { turno_id: { type: "string" }, fecha: DATE, hora: TIME },
         required: ["turno_id", "fecha", "hora"],
@@ -102,8 +106,7 @@ export function toolDefinitions(services: Service[], staff: Staff[]): Anthropic.
     {
       name: "cancelar_turno",
       description: "Cancela un turno del cliente.",
-      strict: true,
-      input_schema: {
+      parameters: {
         type: "object",
         properties: { turno_id: { type: "string" }, motivo: { type: "string" } },
         required: ["turno_id", "motivo"],
@@ -113,15 +116,13 @@ export function toolDefinitions(services: Service[], staff: Staff[]): Anthropic.
     {
       name: "consultar_fidelidad",
       description: "Devuelve cuántos sellos tiene el cliente en la tarjeta de fidelidad y si le toca el descuento.",
-      strict: true,
-      input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+      parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
     },
     {
       name: "derivar_a_humano",
       description:
         "Pasa la conversación a una persona del equipo. Usala ante quejas, pedidos de hablar con alguien, consultas fuera de lo que sabés o dudas.",
-      strict: true,
-      input_schema: {
+      parameters: {
         type: "object",
         properties: { motivo: { type: "string", description: "Motivo breve, para el equipo." } },
         required: ["motivo"],
@@ -132,6 +133,9 @@ export function toolDefinitions(services: Service[], staff: Staff[]): Anthropic.
 }
 
 const fail = (message: string): ToolOutcome => ({ result: { ok: false, error: message }, isError: true })
+
+const NOT_AGREED =
+  "No agendado: el cliente no pidió ni aceptó ese horario. Ofrecéselo con los horarios libres reales y esperá que responda antes de agendar."
 
 export async function executeTool(name: string, input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
   const s = await db()
@@ -164,10 +168,26 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
               const m = member(input.barbero_id)
               return m ? freeSlots({ ...base, staff: m }).map((t) => ({ hora: t, barbero: m.name, barbero_id: m.id })) : []
             })()
-      // Pocas opciones y espaciadas: un chat no es una grilla.
-      const spaced = slots.filter((_, i) => i % 2 === 0).slice(0, 8)
+      // Primero la franja que pidió el cliente; después, pocas opciones y
+      // espaciadas (un chat no es una grilla). Sin el filtro, las 8 primeras
+      // son todas de la mañana y "a la tarde" nunca encuentra lugar.
+      const from = typeof input.desde_hora === "string" && /^\d{2}:\d{2}$/.test(input.desde_hora) ? input.desde_hora : ""
+      const inRange = from ? slots.filter((x) => x.hora >= from) : slots
+      const spaced = (inRange.length > 8 ? inRange.filter((_, i) => i % 2 === 0) : inRange).slice(0, 8)
       return {
-        result: { ok: true, dia: formatDayLong(input.fecha), servicio: svc.name, horarios: spaced, hay_mas: slots.length > spaced.length },
+        result: {
+          ok: true,
+          dia: formatDayLong(input.fecha),
+          servicio: svc.name,
+          ...(from ? { desde: from } : {}),
+          horarios: spaced,
+          hay_mas: inRange.length > spaced.length,
+          // Si la franja está llena, se le dan los horarios reales más cercanos
+          // de antes: con la lista vacía, los modelos chicos inventan uno.
+          ...(from && !inRange.length
+            ? { sin_lugar_en_esa_franja: true, horarios_antes: slots.filter((x) => x.hora < from).slice(-3) }
+            : {}),
+        },
         action: "consulta_respondida",
       }
     }
@@ -177,7 +197,8 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       const svc = service(input.servicio_id)
       const m = member(input.barbero_id)
       if (!svc || !m || !validDay(input.fecha) || typeof input.hora !== "string") return fail("Datos del turno inválidos.")
-      const free = freeSlots({ day: input.fecha, service: svc, staff: m, appointments: s.appointments, now: ctx.now, stepMin: 5 })
+      if (!clientAgreedTo(input.hora, ctx.history ?? [])) return fail(NOT_AGREED)
+      const free = freeSlots({ day: input.fecha, service: svc, staff: m, appointments: s.appointments, now: ctx.now })
       if (!free.includes(input.hora)) {
         return fail(`${m.name} ya no tiene libre ${input.hora} el ${formatDayLong(input.fecha)}. Volvé a consultar disponibilidad.`)
       }
@@ -245,10 +266,11 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       // Un turno ajeno se trata igual que uno inexistente: no se filtra que existe.
       if (!appt || appt.clientId !== ctx.clientId) return fail("No encontré ese turno entre los del cliente.")
       if (!validDay(input.fecha) || typeof input.hora !== "string") return fail("Fecha u hora inválidas.")
+      if (!clientAgreedTo(input.hora, ctx.history ?? [])) return fail(NOT_AGREED)
       const svc = service(appt.serviceId)!
       const m = member(appt.staffId)!
       const others = s.appointments.filter((a) => a.id !== appt.id)
-      if (!freeSlots({ day: input.fecha, service: svc, staff: m, appointments: others, now: ctx.now, stepMin: 5 }).includes(input.hora)) {
+      if (!freeSlots({ day: input.fecha, service: svc, staff: m, appointments: others, now: ctx.now }).includes(input.hora)) {
         return fail(`${m.name} no tiene libre ese horario. Consultá disponibilidad.`)
       }
       const start = at(input.fecha, input.hora)

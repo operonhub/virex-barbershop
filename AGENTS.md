@@ -12,7 +12,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Panel de gestión para **Virex Barber Shop** (Oncativo 2022, Lanús Este, Buenos Aires):
 agenda por barbero, bandeja unificada de WhatsApp + Instagram vía **Zernio**, **agente IA**
-(Claude) que responde y agenda solo, caja del día, finanzas del mes, clientes con tarjeta de
+(Gemini o Claude) que responde y agenda solo, caja del día, finanzas del mes, clientes con tarjeta de
 fidelidad digital y reserva online pública. Lo hace **Operon** (operonhub.com).
 
 Todo el producto (UI, comentarios, commits, copy) está en **castellano rioplatense**, con voseo.
@@ -22,10 +22,12 @@ Mantenerlo así.
 
 - **Esqueleto funcional en modo demo:** todas las pantallas funcionan con datos de ejemplo
   realistas generados en memoria (`src/lib/data/seed.ts`). No hay base conectada todavía.
-- Barberos (Santi / Thiago / Bruno), precios y duraciones son **supuestos**: se confirman con el
-  cliente (ver `docs/PLAN.md` → "Preguntas").
-- Lo real, tomado del Instagram del local: dirección, horario (mar–sáb 11–20) y la tarjeta de
-  fidelidad (5 cortes → el 6to al 50 %).
+- **Datos reales (24/09):** mar–sáb de 11 a 20; barberos **Santiago, Sebastián y Nehemías**;
+  **Corte $15.000** y **Corte + barba $20.000**; todos los turnos duran **una hora** (el agente y
+  la web ofrecen horarios en punto: `BRAND.booking.slotStepMin`). Más la dirección y la tarjeta
+  de fidelidad (5 cortes → el 6to al 50 %).
+- Siguen siendo **supuestos**: quién es el dueño en el sistema (hoy Santiago) y las comisiones
+  (50 %). Ver `docs/ROADMAP.md` → datos a pedir.
 - Plan por fases y decisiones: **`docs/PLAN.md`** (leerlo antes de tareas grandes).
 
 ## Comandos
@@ -71,7 +73,7 @@ src/lib/domain/             Reglas PURAS con tests: slots.ts (disponibilidad), l
 src/lib/data/repo.ts        Única puerta a los datos. Hoy: estado demo en memoria (globalThis).
 src/lib/data/queries.ts     Una consulta por pantalla (arma exactamente lo que la página necesita).
 src/lib/data/actions.ts     Server actions (crear turno, cobrar, mensajes, modo IA/humano…).
-src/lib/agent/              config, prompt, tools (7 herramientas), run (loop con Claude),
+src/lib/agent/              config, prompt, tools (7 herramientas), run (loop), providers/ (Gemini, Claude),
                             respond (bandeja ↔ agente ↔ Zernio), handoff (red de seguridad), actions.
 src/lib/zernio/             Cliente de Zernio portado de operon-crm (probado en producción).
 src/lib/time.ts             Hora argentina (−03:00 fija, sin horario de verano). `dayKey` = AAAA-MM-DD.
@@ -100,14 +102,25 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 
 ## El agente IA
 
-- Loop manual con `@anthropic-ai/sdk` (`client.beta.messages.create`), modelo por defecto
-  `claude-opus-5` con `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`).
-  `AGENT_MODEL` / `AGENT_EFFORT` lo cambian. Máximo 6 iteraciones.
+- **Proveedor intercambiable** (`AGENT_PROVIDER=gemini|anthropic`, `AGENT_MODEL`,
+  `AGENT_EFFORT=low|medium|high`). Por defecto **Gemini 3.5 Flash-Lite** (clave de un
+  proyecto con facturación); alternativa **Claude Haiku 4.5**. `run.ts` es el loop y no
+  conoce proveedores: habla con una sesión neutral (`providers/types.ts`), y cada proveedor
+  (`providers/gemini.ts`, `providers/anthropic.ts`) traduce y guarda su propio historial.
+  Máximo 6 vueltas. Tests de la traducción en `providers/providers.test.ts`.
+- En Gemini, el turno del modelo se agrega al historial tal cual vino (trae firmas de
+  pensamiento). En Claude, `fallbacks` sólo va a Opus 5 / Fable y `effort` no va a Haiku.
 - Prompt en dos partes: `buildSystemPrompt` es **estable** (negocio, servicios, reglas del
-  dueño) y lleva `cache_control`; no meterle fecha, hora ni nada que cambie por mensaje. Lo
-  volátil va en `buildContextNote`, al final, como mensaje de sistema (o pegado al último
-  mensaje del cliente en modelos que no lo soportan: ver `supportsMidConversationSystem`).
-- Herramientas con `strict: true`. **El modelo propone, el código decide:** cada herramienta
+  dueño); no meterle fecha, hora ni nada que cambie por mensaje. Lo volátil va en
+  `buildContextNote`, pegado al último mensaje del cliente (o como mensaje de sistema en los
+  Claude que lo soportan).
+- El playground de `/agente` muestra modelo, tokens y costo estimado de cada respuesta
+  (`estimateCostUsd` en `config.ts`, precios cargados a mano).
+- **La IA traduce, la base decide.** El modelo sólo convierte lo que escribe el cliente en un
+  pedido concreto; toda decisión (horario libre, local abierto, barbero que hace el servicio,
+  turno del cliente, y que el cliente **haya pedido o aceptado esa hora**: `consent.ts`) la toma
+  el código. Regla para cualquier agente nuevo: nada queda a interpretación del modelo.
+- Herramientas definidas una vez en JSON Schema (`tools.ts`). **El modelo propone, el código decide:** cada herramienta
   revalida permisos, horario libre y que el turno sea del cliente que escribe.
 - Si el agente falla (sin clave, error, rechazo), la conversación pasa a humano y se marca
   en rojo. Nunca un cliente sin respuesta y sin nadie avisado.
@@ -132,14 +145,20 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 - El sello "Hecho por Operon" (`components/brand/operon-badge.tsx`) va en el pie del panel y de
   la página pública. No sacarlo.
 
-## Próximos pasos (ver docs/PLAN.md)
+## Próximos pasos: **`docs/ROADMAP.md`**
 
-1. Confirmar datos con el cliente (servicios, precios, barberos, comisiones, seña, fidelidad).
-2. Supabase: aplicar `0001_core.sql`, reemplazar el cuerpo de `repo.ts` / `queries.ts` /
-   `actions.ts` / `agent/tools.ts` por consultas; login para el equipo.
-3. Zernio real: conectar WhatsApp (Coexistence) e Instagram, registrar el webhook, backfill.
-4. Recordatorios por WhatsApp (plantilla aprobada por Meta) y Mercado Pago si cobran seña.
-5. Deploy: Vercel del equipo Operon.
+Entrega al cliente el viernes 02/10. El roadmap tiene el orden y el detalle por día; en
+resumen:
+
+1. Agente multi-proveedor (Gemini 3.5 Flash-Lite por defecto, Claude como alternativa) y
+   prueba contra las APIs reales.
+2. Supabase (migración `0002`), reemplazar el cuerpo de `repo.ts` / `queries.ts` /
+   `actions.ts` / `agent/tools.ts` / `agent/respond.ts`, login, Ajustes editables.
+3. Zernio real + tarea que recupera mensajes sin responder.
+4. Seña con Mercado Pago.
+5. Recordatorios por WhatsApp (plantilla de Meta) + endurecer.
+6. **Deploy: todo en Railway** (un servicio + un cron). La demo de Vercel queda en la rama
+   `demo` como vidriera de ventas.
 
 ## Variables de entorno
 

@@ -190,7 +190,7 @@ export async function sendStaffMessage(conversationId: string, body: string): Pr
     id: newId("ms"),
     conversationId,
     author: "staff",
-    staffId: "st-leo",
+    staffId: "st-santiago",
     body: text,
     sentAt,
     action: null,
@@ -250,5 +250,8 @@ export async function listFreeSlots(day: string, serviceId: string, staffId: str
     appointments: s.appointments,
     now: n,
     leadMin: day === dayKey(n) ? 0 : 30,
+    // El panel es para el equipo: puede meter un turno a cualquier cuarto de
+    // hora (alguien que cae de pasada). La grilla en punto es para el agente y la web.
+    stepMin: 15,
   })
 }

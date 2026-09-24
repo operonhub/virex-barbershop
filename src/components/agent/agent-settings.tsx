@@ -12,9 +12,9 @@ import { cn } from "@/lib/utils"
 import type { AgentSettings, AgentTone } from "@/lib/domain/types"
 
 const TONES: { id: AgentTone; label: string; sample: string }[] = [
-  { id: "cercano", label: "Cercano", sample: "¡Hola Mati! Mañana tengo 18:00 con Bruno, ¿te lo reservo? 💈" },
-  { id: "profesional", label: "Profesional", sample: "Hola Matías. Mañana hay lugar a las 18:00 con Bruno. ¿Lo reservo?" },
-  { id: "canchero", label: "Canchero", sample: "Buenas crack! Mañana 18hs con Bruno te queda joya, ¿lo agarro?" },
+  { id: "cercano", label: "Cercano", sample: "¡Hola Mati! Mañana tengo 18:00 con Nehemías, ¿te lo reservo? 💈" },
+  { id: "profesional", label: "Profesional", sample: "Hola Matías. Mañana hay lugar a las 18:00 con Nehemías. ¿Lo reservo?" },
+  { id: "canchero", label: "Canchero", sample: "Buenas crack! Mañana 18hs con Nehemías te queda joya, ¿lo agarro?" },
 ]
 
 const PERMS: { key: keyof AgentSettings["permissions"]; label: string; hint: string }[] = [

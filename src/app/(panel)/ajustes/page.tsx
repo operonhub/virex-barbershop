@@ -4,7 +4,7 @@ import { PageBody, PageHeader, Panel } from "@/components/shell/page-header"
 import { ChannelDot } from "@/components/brand/channel-icons"
 import { BRAND } from "@/config/brand"
 import { db } from "@/lib/data/repo"
-import { readAgentConfig } from "@/lib/agent/config"
+import { PROVIDER_LABEL, readAgentConfig } from "@/lib/agent/config"
 import { readZernioConfig, readZernioWebhookConfig } from "@/lib/zernio/config"
 import { formatARS } from "@/lib/money"
 import { cn } from "@/lib/utils"
@@ -138,10 +138,10 @@ function Connections() {
       detail: webhook.configured ? "Firma HMAC activa en /api/zernio/webhook." : webhook.reason,
     },
     {
-      name: "Agente IA (Claude)",
+      name: `Agente IA (${PROVIDER_LABEL[agent.provider]})`,
       icon: null,
       ok: agent.configured,
-      detail: agent.configured ? `Modelo ${agent.model}.` : agent.reason,
+      detail: agent.configured ? `Modelo ${agent.model}. Se cambia con AGENT_PROVIDER y AGENT_MODEL.` : agent.reason,
     },
     {
       name: "Mercado Pago",
