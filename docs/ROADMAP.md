@@ -83,8 +83,14 @@ Todo esto tarda días por razones ajenas, así que arranca ya y en paralelo:
 3. **Primer deploy en Railway del estado actual** (`next start` respeta `PORT`; Railpack
    detecta Next). Así se descubren temprano los problemas del entorno (build con Google
    Fonts, variables, `after()` en servidor propio).
+   ✅ 24/09: publicado en https://virex-barbershop-production.up.railway.app (US East), con
+   login simple por `PANEL_PASSWORD`. Ojo: al cargar variables Railway redeploya el commit
+   que tenía; un push que llega en el medio puede quedar tapado (pasó una vez: se resolvió
+   con Redeploy del deploy correcto).
 4. **Congelar la demo de Vercel:** apuntar ese proyecto a una rama `demo`, para que siga
    sirviendo de vidriera de ventas y no se rompa cuando `main` pase a Supabase.
+   ✅ 24/09: rama `demo` (versión sin login, datos que se regeneran solos) → Vercel
+   (virex-barbershop-beta.vercel.app, Production Branch = `demo`). `main` → Railway.
 
 ## Fase 2 · Vie 25 a la tarde – Lun 28: base real + login (el grueso, ~2,5 días, usa el colchón del sábado 26)
 
