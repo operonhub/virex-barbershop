@@ -1,5 +1,6 @@
 import "server-only"
-import { db, newId } from "@/lib/data/repo"
+import { db, store } from "@/lib/data/repo"
+import { SlotTakenError } from "@/lib/data/store/types"
 import { freeSlots, freeSlotsAnyStaff, isOpen } from "@/lib/domain/slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import { addDays, at, dayKey, formatDayLong, hm } from "@/lib/time"
@@ -19,8 +20,8 @@ import { clientAgreedTo } from "./consent"
  *  3. Los resultados son JSON chico y en castellano: el modelo los lee para
  *     redactar la respuesta, así que tienen que decir qué pasó, no un código.
  *
- * Hoy operan sobre el estado demo (`db()`); con Supabase, las escrituras
- * pasan a la base y el doble turno lo frena la restricción EXCLUDE.
+ * Leen con `db()` y escriben con `store()`: en producción es Supabase, y el
+ * doble turno lo frena la restricción EXCLUDE aunque el chequeo de acá falle.
  */
 
 export interface ToolContext {
@@ -203,42 +204,40 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         return fail(`${m.name} ya no tiene libre ${input.hora} el ${formatDayLong(input.fecha)}. Volvé a consultar disponibilidad.`)
       }
 
-      let clientId = ctx.clientId
-      if (!clientId) {
-        const nombre = String(input.nombre_cliente || ctx.participantName).trim()
-        const tel = String(input.telefono || "").trim()
-        clientId = newId("cl")
-        s.clients.push({
-          id: clientId,
-          name: nombre,
-          phone: tel || null,
-          instagram: null,
-          channel: ctx.channel,
-          cutNotes: null,
-          notes: "Creado por el agente IA.",
-          preferredStaffId: m.id,
-          createdAt: ctx.now.toISOString(),
-        })
-        const conv = s.conversations.find((c) => c.id === ctx.conversationId)
-        if (conv) conv.clientId = clientId
-      }
-
       const start = at(input.fecha, input.hora)
-      const id = newId("tu")
-      s.appointments.push({
-        id,
-        clientId,
-        staffId: m.id,
-        serviceId: svc.id,
-        startsAt: start.toISOString(),
-        endsAt: new Date(start.getTime() + svc.durationMin * 60_000).toISOString(),
-        status: "confirmado",
-        source: "agente",
-        price: svc.price,
-        notes: null,
-        conversationId: ctx.conversationId,
-        createdAt: ctx.now.toISOString(),
-      })
+      let created: { appointmentId: string; clientId: string }
+      try {
+        created = await store().createAppointment({
+          appointment: {
+            clientId: ctx.clientId ?? undefined,
+            staffId: m.id,
+            serviceId: svc.id,
+            startsAt: start.toISOString(),
+            endsAt: new Date(start.getTime() + svc.durationMin * 60_000).toISOString(),
+            status: "confirmado",
+            source: "agente",
+            price: svc.price,
+            notes: null,
+            conversationId: ctx.conversationId,
+            createdAt: ctx.now.toISOString(),
+          },
+          newClient: ctx.clientId
+            ? undefined
+            : {
+                name: String(input.nombre_cliente || ctx.participantName).trim().slice(0, 80),
+                phone: String(input.telefono || "").replace(/[^\d+]/g, "") || null,
+                channel: ctx.channel,
+                notes: "Creado por el agente IA.",
+                preferredStaffId: m.id,
+              },
+          linkConversationId: ctx.conversationId,
+        })
+      } catch (e) {
+        if (e instanceof SlotTakenError) return fail(`Ese horario se acaba de ocupar. Volvé a consultar disponibilidad.`)
+        throw e
+      }
+      const id = created.appointmentId
+      const clientId = created.clientId
       return {
         result: { ok: true, turno_id: id, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name, precio: svc.price },
         action: "turno_creado",
@@ -274,9 +273,16 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         return fail(`${m.name} no tiene libre ese horario. Consultá disponibilidad.`)
       }
       const start = at(input.fecha, input.hora)
-      appt.startsAt = start.toISOString()
-      appt.endsAt = new Date(start.getTime() + svc.durationMin * 60_000).toISOString()
-      appt.notes = `Reprogramado por el agente IA.`
+      try {
+        await store().updateAppointment(appt.id, {
+          startsAt: start.toISOString(),
+          endsAt: new Date(start.getTime() + svc.durationMin * 60_000).toISOString(),
+          notes: "Reprogramado por el agente IA.",
+        })
+      } catch (e) {
+        if (e instanceof SlotTakenError) return fail(`${m.name} ya no tiene libre ese horario. Consultá disponibilidad.`)
+        throw e
+      }
       return {
         result: { ok: true, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name },
         action: "turno_reprogramado",
@@ -287,8 +293,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       if (!perms.cancel) return fail("El dueño no habilitó cancelar. Derivá a una persona.")
       const appt = s.appointments.find((a) => a.id === input.turno_id)
       if (!appt || appt.clientId !== ctx.clientId) return fail("No encontré ese turno entre los del cliente.")
-      appt.status = "cancelado"
-      appt.notes = `Cancelado por el agente: ${String(input.motivo)}`
+      await store().updateAppointment(appt.id, { status: "cancelado", notes: `Cancelado por el agente: ${String(input.motivo).slice(0, 200)}` })
       return { result: { ok: true, cancelado: true }, action: "turno_cancelado" }
     }
 
@@ -303,11 +308,8 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
     }
 
     case "derivar_a_humano": {
-      const conv = s.conversations.find((c) => c.id === ctx.conversationId)
-      if (conv) {
-        conv.mode = "humano"
-        conv.needsHuman = true
-        conv.handoffReason = String(input.motivo).slice(0, 120)
+      if (ctx.conversationId) {
+        await store().updateConversation(ctx.conversationId, { mode: "humano", needsHuman: true, handoffReason: String(input.motivo).slice(0, 120) })
       }
       return { result: { ok: true, derivado: true }, action: "derivado_humano" }
     }

@@ -94,6 +94,13 @@ Todo esto tarda días por razones ajenas, así que arranca ya y en paralelo:
 
 ## Fase 2 · Vie 25 a la tarde – Lun 28: base real + login (el grueso, ~2,5 días, usa el colchón del sábado 26)
 
+**Estado 24/09:** ✅ Supabase `virex-barbershop` (us-east-1) con 0001–0003 y datos reales
+(`supabase/seed.sql`). ✅ Capa de datos: `Store` con memoria y Postgres; pantallas, acciones,
+agente y webhook escriben en la base. ✅ Pruebas de integración contra la base real (doble
+reserva simultánea → pasa una sola, doble cobro, mensaje repetido). ✅ Login simple
+(`PANEL_PASSWORD`) en lugar de usuarios de Supabase por ahora. **Falta:** horarios/francos por
+barbero en `freeSlots`, Ajustes editables, cierre de caja persistente.
+
 La promesa de la arquitectura: **se reescribe lo de adentro de la capa de datos, las pantallas
 no se tocan.**
 

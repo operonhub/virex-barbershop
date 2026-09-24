@@ -11,9 +11,12 @@ await db.exec(`
   create schema auth;
   create table auth.users (id uuid primary key);
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
+  create role anon; create role authenticated;
 `)
-await db.exec(readFileSync("supabase/migrations/0001_core.sql", "utf8"))
-console.log("✓ migración aplicada")
+for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql"]) {
+  await db.exec(readFileSync(`supabase/migrations/${f}`, "utf8"))
+  console.log(`✓ ${f} aplicada`)
+}
 
 const [{ id: staff }] = (await db.query(`insert into staff (name, role) values ('Leo','dueno') returning id`)).rows
 const [{ id: svc }] = (await db.query(`insert into services (name, category, duration_min, price) values ('Corte','corte',40,14000) returning id`)).rows
@@ -36,4 +39,23 @@ try {
   await db.query(`insert into payments (concept, kind, list_price, discount, tip, amount, method) values ('Corte','servicio',14000,7000,0,9000,'efectivo')`)
   console.log("✗ ERROR: aceptó un total mal calculado"); process.exit(1)
 } catch { console.log("✓ rechazó un cobro con total que no cierra") }
+
+// 0002: seña + cobro final del mismo turno; nunca dos cobros de servicio.
+const [{ id: turno }] = (await db.query(
+  `insert into appointments (client_id, staff_id, service_id, starts_at, ends_at, source, price, status, hold_expires_at)
+   values ($1,$2,$3,'2026-09-19T11:00:00-03','2026-09-19T12:00:00-03','web',15000,'pendiente', now() + interval '15 minutes') returning id`,
+  [cl, staff, svc])).rows
+const pay = (kind, amount, ref = null) =>
+  db.query(`insert into payments (appointment_id, concept, kind, list_price, amount, method, external_ref)
+            values ($1,'Corte',$2,$3,$3,'mercadopago',$4)`, [turno, kind, amount, ref])
+await pay("sena", 5000, "mp-123")
+console.log("✓ seña registrada")
+try { await pay("sena", 5000, "mp-123"); console.log("✗ ERROR: aceptó la misma seña dos veces"); process.exit(1) }
+catch { console.log("✓ rechazó el reintento del mismo pago de Mercado Pago") }
+await pay("servicio", 10000)
+console.log("✓ cobro final del mismo turno (seña + resto)")
+try { await pay("servicio", 10000); console.log("✗ ERROR: cobró el turno dos veces"); process.exit(1) }
+catch { console.log("✓ rechazó un segundo cobro del mismo turno") }
+const settings = (await db.query(`select opening_cash, deposit_enabled from shop_settings`)).rows
+console.log("✓ configuración del local creada:", JSON.stringify(settings[0]))
 await db.close()

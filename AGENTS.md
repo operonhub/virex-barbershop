@@ -20,8 +20,9 @@ Mantenerlo así.
 
 ## Estado actual
 
-- **Esqueleto funcional en modo demo:** todas las pantallas funcionan con datos de ejemplo
-  realistas generados en memoria (`src/lib/data/seed.ts`). No hay base conectada todavía.
+- **Conectado a Supabase** (proyecto `virex-barbershop`, us-east-1) cuando hay `DATABASE_URL`;
+  sin ella, en desarrollo, usa la demo en memoria (`src/lib/data/seed.ts`). La rama `demo`
+  (Vercel) es la vidriera de ventas con datos inventados.
 - **Datos reales (24/09):** mar–sáb de 11 a 20; barberos **Santiago, Sebastián y Nehemías**;
   **Corte $15.000** y **Corte + barba $20.000**; todos los turnos duran **una hora** (el agente y
   la web ofrecen horarios en punto: `BRAND.booking.slotStepMin`). Más la dirección y la tarjeta
@@ -36,7 +37,8 @@ Mantenerlo así.
 npm install
 npm run dev          # http://localhost:3060
 npm test             # vitest: reglas de dominio (disponibilidad, fidelidad)
-npm run test:db      # corre la migración en Postgres real (PGlite) y prueba el anti doble turno
+npm run test:db      # corre las migraciones en Postgres real (PGlite): doble turno, doble cobro, seña
+npm run test:integration  # contra la base REAL (DATABASE_URL): crea datos "PRUEBA ·" y los borra
 npm run lint         # ESLint + React Compiler (los errores del compiler son errores reales)
 npx tsc --noEmit
 npm run build        # cortar `npm run dev` antes: el build pisa .next/ y el dev queda en 404
@@ -70,7 +72,10 @@ src/app/api/zernio/webhook/ Webhook de mensajes entrantes (firma HMAC, dedupe, a
 src/config/brand.ts         Datos del negocio. Todo lo que dice "Virex" sale de acá.
 src/lib/domain/             Reglas PURAS con tests: slots.ts (disponibilidad), loyalty.ts
                             (fidelidad), finance.ts (caja, comisiones, origen de turnos), types.ts.
-src/lib/data/repo.ts        Única puerta a los datos. Hoy: estado demo en memoria (globalThis).
+src/lib/data/repo.ts        Única puerta a los datos: `db()` (lee), `store()` (escribe), `now()`.
+src/lib/data/store/         La interfaz `Store` y sus dos implementaciones: memory.ts (demo) y
+                            postgres.ts (Supabase, con `postgres`). Los errores de la base se
+                            traducen: 23P01 → SlotTakenError, 23505 en cobros → AlreadyChargedError.
 src/lib/data/queries.ts     Una consulta por pantalla (arma exactamente lo que la página necesita).
 src/lib/data/actions.ts     Server actions (crear turno, cobrar, mensajes, modo IA/humano…).
 src/lib/agent/              config, prompt, tools (7 herramientas), run (loop), providers/ (Gemini, Claude),
@@ -81,7 +86,9 @@ src/lib/money.ts            Pesos enteros (sin centavos), formatos es-AR.
 src/lib/chart-palette.ts    Paleta de datos para gráficos (validada para daltonismo).
 src/components/brand/       Isotipo (virex-mark), wordmark, intro, íconos de canal, sello Operon.
 src/components/ui/          Componentes shadcn (base-nova, Base UI). Tocar lo mínimo.
-supabase/migrations/        0001_core.sql: esquema completo + RLS + restricción EXCLUDE.
+supabase/migrations/        0001 esquema + RLS + EXCLUDE · 0002 horarios por barbero, francos, seña,
+                            config del local · 0003 endurecer (revisor de seguridad de Supabase).
+supabase/seed.sql           Datos reales (barberos, servicios, horarios, reglas del agente). Idempotente.
 public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 ```
 
@@ -108,9 +115,13 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
   `tstzrange(starts_at, ends_at, '[)')` por barbero; cancelados y no-show liberan la silla).
 - **La fidelidad se deriva de los pagos**, no se guarda un contador. El descuento lo recalcula
   el servidor al cobrar (`chargeAppointment`), nunca lo decide la pantalla.
-- **"Ahora" es el reloj de la demo:** usar `now()` de `repo.ts` y pasar `now` a los
-  componentes; no usar `new Date()` para cuentas relativas al presente. Con el local cerrado,
-  la demo simula el último día hábil a las 16:40 (`demoClock`); `DEMO_CLOCK=real` lo apaga.
+- **"Ahora" sale de `now()` de `repo.ts`:** con la base es la hora real; en la demo, con el
+  local cerrado, simula el último día hábil a las 16:40 (`demoClock`). No usar `new Date()` para
+  cuentas relativas al presente.
+- **Leer con `db()`, escribir con `store()`**, nunca mutar el snapshot. El snapshot de Postgres
+  trae 400 días de turnos/cobros/gastos y 90 de mensajes (suficiente para fidelidad y finanzas).
+- **Migraciones:** archivo nuevo en `supabase/migrations/`, probado con `npm run test:db`, y
+  aplicado en Supabase. Nunca editar una migración ya aplicada.
 - Si cambiás el generador de datos (`seed.ts`), subí `SEED_VERSION` o el estado en memoria no
   se regenera hasta el día siguiente.
 

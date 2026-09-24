@@ -1,41 +1,34 @@
 import "server-only"
 import { connection } from "next/server"
-import { buildDemo, demoClock, SEED_VERSION, type DemoState } from "./seed"
-import { dayKey } from "@/lib/time"
+import { memoryStore } from "./store/memory"
+import { postgresStore } from "./store/postgres"
+import type { Snapshot, Store } from "./store/types"
 
 /**
- * Repositorio: la única puerta a los datos.
+ * Repositorio: elige la fuente de datos y es la única puerta a ellos.
  *
- * Hoy lee y escribe un estado EN MEMORIA generado por `seed.ts` (modo demo).
- * Cuando se conecte Supabase, se reemplaza el cuerpo de estas funciones por
- * consultas — las pantallas y las server actions no se enteran, porque sólo
- * conocen estas firmas.
+ *   DATABASE_URL presente  → la base real (Supabase).
+ *   sin DATABASE_URL       → la demo en memoria, SÓLO en desarrollo o si se
+ *                            pide explícitamente con DATA_SOURCE=demo (la
+ *                            vidriera de ventas).
  *
- * El estado vive en `globalThis` para sobrevivir al hot-reload de `next dev`
- * (si no, cada guardado de archivo borraría lo que se cargó en la demo). Se
- * regenera solo cuando cambia el día del reloj de la demo.
+ * En producción sin base y sin DATA_SOURCE=demo, la app se niega a arrancar:
+ * un panel real mostrando datos inventados es peor que un error claro.
  */
+export function store(): Store {
+  if (process.env.DATABASE_URL) return postgresStore
+  if (process.env.NODE_ENV !== "production" || process.env.DATA_SOURCE === "demo") return memoryStore
+  throw new Error("Falta DATABASE_URL: el panel no tiene base de datos configurada.")
+}
 
-type Store = { key: string; state: DemoState }
-const g = globalThis as unknown as { __virexDemo?: Store }
-
-export async function db(): Promise<DemoState> {
-  // Sin esto, Next prerenderiza las páginas en el build y el "ahora" de la
-  // demo queda congelado en la hora del deploy.
+/** Todo lo que una pantalla necesita leer. */
+export async function db(): Promise<Snapshot> {
+  // Sin esto, Next prerenderiza las páginas en el build y quedan congeladas.
   await connection()
-  const key = `${SEED_VERSION}:${dayKey(demoClock().now)}`
-  if (!g.__virexDemo || g.__virexDemo.key !== key) {
-    g.__virexDemo = { key, state: buildDemo() }
-  }
-  return g.__virexDemo.state
+  return store().snapshot()
 }
 
-/** "Ahora" según la demo. Toda cuenta relativa al presente usa esto, no `new Date()`. */
+/** "Ahora" según la fuente (la demo puede simular una tarde de trabajo). No usar `new Date()` para cuentas del presente. */
 export async function now(): Promise<Date> {
-  const state = await db()
-  return state.simulated ? new Date(state.now) : new Date()
-}
-
-export function newId(prefix: string) {
-  return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  return store().now()
 }
