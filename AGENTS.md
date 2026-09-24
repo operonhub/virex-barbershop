@@ -85,6 +85,20 @@ supabase/migrations/        0001_core.sql: esquema completo + RLS + restricción
 public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 ```
 
+## Acceso al panel (login simple)
+
+- Una contraseña para todo el equipo: `PANEL_PASSWORD` (`src/lib/auth/session.ts`). La cookie
+  guarda una firma derivada de la contraseña, no la contraseña; cambiarla cierra todas las
+  sesiones. En producción, sin `PANEL_PASSWORD`, el panel queda **cerrado**; en desarrollo,
+  abierto.
+- `src/proxy.ts` (el middleware de Next 16) manda a `/login` todo menos `/reservar`, `/api/*`,
+  `/login` y los estáticos. **Además cada server action del panel llama a
+  `assertPanelSession()`**: una server action se puede invocar por POST desde otra ruta, así que
+  el proxy solo no alcanza. Toda action nueva del panel tiene que empezar con esa línea.
+- La reserva pública usa su propia action, `createPublicBooking` (sin sesión, acepta menos:
+  cliente nuevo, origen web, grilla del local). No reutilizar `createAppointment` ahí.
+- Se reemplaza por usuarios de Supabase Auth en la Fase 2.
+
 ## Reglas de negocio que no se rompen
 
 - **Un solo cálculo de horarios libres:** `freeSlots` / `freeSlotsAnyStaff` en

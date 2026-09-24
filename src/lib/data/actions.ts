@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { assertPanelSession } from "@/lib/auth/guard"
 import { db, newId, now } from "./repo"
 import { at, dayKey } from "@/lib/time"
 import { freeSlots } from "@/lib/domain/slots"
@@ -27,7 +28,7 @@ type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error: string
 
 const refresh = () => revalidatePath("/", "layout")
 
-export async function createAppointment(input: {
+type NewAppointment = {
   day: string
   time: string
   staffId: string
@@ -36,7 +37,39 @@ export async function createAppointment(input: {
   newClient?: { name: string; phone?: string }
   source?: AppointmentSource
   notes?: string
+}
+
+/** Desde el panel: el equipo puede cargar a cualquier hora (cada 5 min) y sin anticipación mínima. */
+export async function createAppointment(input: NewAppointment): Promise<Result<{ id: string }>> {
+  await assertPanelSession()
+  return book(input, { stepMin: 5, leadMin: 0 })
+}
+
+/**
+ * Desde la reserva pública (/reservar): no hay sesión, así que acepta MENOS.
+ * Siempre cliente nuevo con nombre y teléfono, origen "web", y sólo horarios
+ * de la grilla del local con la anticipación normal.
+ * TODO(producción): límite de pedidos por IP y verificación del teléfono.
+ */
+export async function createPublicBooking(input: {
+  day: string
+  time: string
+  staffId: string
+  serviceId: string
+  name: string
+  phone: string
 }): Promise<Result<{ id: string }>> {
+  const name = String(input.name ?? "").trim().slice(0, 80)
+  const phone = String(input.phone ?? "").replace(/[^\d+]/g, "")
+  if (name.length < 2) return { ok: false, error: "Poné tu nombre." }
+  if (phone.replace(/\D/g, "").length < 8) return { ok: false, error: "Revisá el teléfono: tiene que tener al menos 8 números." }
+  return book(
+    { day: input.day, time: input.time, staffId: input.staffId, serviceId: input.serviceId, newClient: { name, phone }, source: "web" },
+    {}
+  )
+}
+
+async function book(input: NewAppointment, grid: { stepMin?: number; leadMin?: number }): Promise<Result<{ id: string }>> {
   const s = await db()
   const service = s.services.find((x) => x.id === input.serviceId)
   const staff = s.staff.find((x) => x.id === input.staffId)
@@ -47,8 +80,7 @@ export async function createAppointment(input: {
     service,
     staff,
     appointments: s.appointments,
-    stepMin: 5,
-    leadMin: 0,
+    ...grid,
     now: await now(),
   })
   if (!slots.includes(input.time)) {
@@ -94,6 +126,7 @@ export async function createAppointment(input: {
 }
 
 export async function setAppointmentStatus(id: string, status: AppointmentStatus): Promise<Result> {
+  await assertPanelSession()
   const s = await db()
   const appt = s.appointments.find((a) => a.id === id)
   if (!appt) return { ok: false, error: "No encontré ese turno." }
@@ -117,6 +150,7 @@ export async function chargeAppointment(input: {
   const appt = s.appointments.find((a) => a.id === input.appointmentId)
   if (!appt) return { ok: false, error: "No encontré ese turno." }
   if (s.payments.some((p) => p.appointmentId === appt.id)) {
+  await assertPanelSession()
     return { ok: false, error: "Ese turno ya está cobrado." }
   }
   const service = s.services.find((x) => x.id === appt.serviceId)!
@@ -153,6 +187,7 @@ export async function addExpense(input: {
   amount: number
   method: PaymentMethod
 }): Promise<Result> {
+  await assertPanelSession()
   if (!input.description.trim() || !(input.amount > 0)) {
     return { ok: false, error: "Completá descripción y monto." }
   }
@@ -180,6 +215,7 @@ export async function addExpense(input: {
  * devuelve Zernio.
  */
 export async function sendStaffMessage(conversationId: string, body: string): Promise<Result> {
+  await assertPanelSession()
   const text = body.trim()
   if (!text) return { ok: false, error: "El mensaje está vacío." }
   const s = await db()
@@ -205,6 +241,7 @@ export async function sendStaffMessage(conversationId: string, body: string): Pr
 }
 
 export async function setConversationMode(conversationId: string, mode: ConversationMode): Promise<Result> {
+  await assertPanelSession()
   const s = await db()
   const conv = s.conversations.find((c) => c.id === conversationId)
   if (!conv) return { ok: false, error: "No encontré la conversación." }
@@ -218,6 +255,7 @@ export async function setConversationMode(conversationId: string, mode: Conversa
 }
 
 export async function markConversationRead(conversationId: string): Promise<Result> {
+  await assertPanelSession()
   const s = await db()
   const conv = s.conversations.find((c) => c.id === conversationId)
   if (conv && conv.unread) {
@@ -230,6 +268,7 @@ export async function markConversationRead(conversationId: string): Promise<Resu
 /* ── Agente ── */
 
 export async function updateAgentSettings(patch: Partial<AgentSettings>): Promise<Result> {
+  await assertPanelSession()
   const s = await db()
   s.agentSettings = { ...s.agentSettings, ...patch }
   refresh()
@@ -238,6 +277,7 @@ export async function updateAgentSettings(patch: Partial<AgentSettings>): Promis
 
 /** Para el "¿cuándo hay lugar?" del diálogo de nuevo turno. */
 export async function listFreeSlots(day: string, serviceId: string, staffId: string): Promise<string[]> {
+  await assertPanelSession()
   const s = await db()
   const service = s.services.find((x) => x.id === serviceId)
   const staff = s.staff.find((x) => x.id === staffId)

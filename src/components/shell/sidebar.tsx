@@ -2,6 +2,8 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { LogOut } from "lucide-react"
+import { logout } from "@/app/login/actions"
 import { VirexMark } from "@/components/brand/virex-mark"
 import { OperonBadge } from "@/components/brand/operon-badge"
 import { cn } from "@/lib/utils"
@@ -51,12 +53,22 @@ export function Sidebar({ info }: { info: ShellInfo }) {
         <NavLink item={SETTINGS_ITEM} active={isActive(pathname, SETTINGS_ITEM.href)} info={info} />
         <div className="flex items-center gap-3 px-3 pt-1">
           <span className="grid size-8 place-items-center rounded-full bg-surface-3 font-wide text-[13px] font-semibold text-ivory">
-            L
+            S
           </span>
-          <span className="min-w-0 leading-tight">
+          <span className="min-w-0 flex-1 leading-tight">
             <span className="block truncate text-[13px] font-medium text-ivory">Santi</span>
             <span className="block text-[11px] text-ivory-3">Dueño</span>
           </span>
+          <form action={logout}>
+            <button
+              type="submit"
+              aria-label="Salir del panel"
+              title="Salir"
+              className="grid size-8 place-items-center rounded-lg text-ivory-3 transition-colors hover:bg-surface-2 hover:text-ivory"
+            >
+              <LogOut className="size-4" strokeWidth={1.75} />
+            </button>
+          </form>
         </div>
         <OperonBadge className="px-3" />
       </div>

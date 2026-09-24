@@ -3,11 +3,12 @@
 import Link from "next/link"
 import { useState } from "react"
 import { usePathname } from "next/navigation"
-import { CalendarDays, Ellipsis, House, MessagesSquare, Plus } from "lucide-react"
+import { CalendarDays, Ellipsis, House, LogOut, MessagesSquare, Plus } from "lucide-react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { OperonBadge } from "@/components/brand/operon-badge"
 import { useNewAppointment } from "@/components/agenda/new-appointment"
 import { cn } from "@/lib/utils"
+import { logout } from "@/app/login/actions"
 import { NAV, SETTINGS_ITEM, isActive } from "./nav"
 import type { ShellInfo } from "./sidebar"
 
@@ -93,6 +94,14 @@ export function MobileNav({ info }: { info: ShellInfo }) {
               )
             })}
           </ul>
+          <form action={logout} className="mt-1">
+            <button
+              type="submit"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg text-[14px] text-ivory-3 hover:bg-surface-2 hover:text-ivory"
+            >
+              <LogOut className="size-4" strokeWidth={1.75} /> Salir del panel
+            </button>
+          </form>
           <OperonBadge className="mx-auto mt-2" />
         </SheetContent>
       </Sheet>

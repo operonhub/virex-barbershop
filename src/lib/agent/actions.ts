@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { assertPanelSession } from "@/lib/auth/guard"
 import { db, now as clockNow } from "@/lib/data/repo"
 import { buildSystemPrompt } from "./prompt"
 import { buildContextFor, mainAction } from "./respond"
@@ -17,6 +18,7 @@ export async function testAgent(history: TurnInput[]): Promise<
   | { ok: true; reply: string; action: AgentActionKind | null; tokens: number; model: string; costUsd: number | null }
   | { ok: false; reason: string }
 > {
+  await assertPanelSession()
   if (!history.length || history[history.length - 1].role !== "user") {
     return { ok: false, reason: "Escribí un mensaje primero." }
   }

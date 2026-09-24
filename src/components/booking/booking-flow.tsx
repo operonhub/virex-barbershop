@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react"
 import { ArrowLeft, Check, Clock3, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { WhatsAppIcon } from "@/components/brand/channel-icons"
-import { createAppointment } from "@/lib/data/actions"
+import { createPublicBooking } from "@/lib/data/actions"
 import { freeSlots, freeSlotsAnyStaff, isOpen } from "@/lib/domain/slots"
 import { addDays, dayKey, formatDayLong, WEEKDAY_SHORT, weekday } from "@/lib/time"
 import { formatARS } from "@/lib/money"
@@ -67,14 +67,7 @@ export function BookingFlow({
     if (!service || !slot) return
     setError(null)
     startTransition(async () => {
-      const res = await createAppointment({
-        day,
-        time: slot.time,
-        staffId: slot.staffId,
-        serviceId: service.id,
-        newClient: { name, phone },
-        source: "web",
-      })
+      const res = await createPublicBooking({ day, time: slot.time, staffId: slot.staffId, serviceId: service.id, name, phone })
       if (!res.ok) setError(res.error)
       else setStep("listo")
     })
