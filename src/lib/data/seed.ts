@@ -16,6 +16,7 @@ import type {
   AgentSettings,
   Appointment,
   AppointmentStatus,
+  CashClosure,
   Channel,
   Client,
   Conversation,
@@ -24,7 +25,9 @@ import type {
   Payment,
   PaymentMethod,
   Service,
+  ShopSettings,
   Staff,
+  TimeOffEntry,
 } from "@/lib/domain/types"
 
 /**
@@ -41,7 +44,7 @@ import type {
  */
 
 /** Subirlo al cambiar el generador: invalida el estado demo guardado en memoria. */
-export const SEED_VERSION = 5
+export const SEED_VERSION = 6
 
 export interface DemoState {
   /** Instante que la demo considera "ahora". Ver `demoClock`. */
@@ -57,6 +60,9 @@ export interface DemoState {
   messages: Message[]
   agentEvents: AgentEvent[]
   agentSettings: AgentSettings
+  shopSettings: ShopSettings
+  timeOff: TimeOffEntry[]
+  cashClosures: CashClosure[]
 }
 
 /* ── Reloj ────────────────────────────────────────────────────────────── */
@@ -634,8 +640,9 @@ export function buildDemo(real = new Date()): DemoState {
   return {
     now: now.toISOString(),
     simulated: clock.simulated,
-    staff: STAFF,
-    services: SERVICES,
+    // Copias: Ajustes las edita y no tiene que tocar las constantes del módulo.
+    staff: STAFF.map((s) => ({ ...s })),
+    services: SERVICES.map((s) => ({ ...s })),
     clients,
     appointments,
     payments,
@@ -643,6 +650,9 @@ export function buildDemo(real = new Date()): DemoState {
     conversations,
     messages,
     agentEvents,
+    shopSettings: { openingCash: 20000, depositEnabled: false, depositAmount: 0, depositHoldMin: 15, remindersEnabled: false },
+    timeOff: [],
+    cashClosures: [],
     agentSettings: {
       enabled: true,
       name: "Asistente Virex",

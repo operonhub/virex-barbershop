@@ -3,6 +3,7 @@ import type {
   AgentSettings,
   Appointment,
   AppointmentStatus,
+  CashClosure,
   Channel,
   Client,
   Conversation,
@@ -10,7 +11,11 @@ import type {
   Message,
   Payment,
   Service,
+  ShopSettings,
   Staff,
+  StaffRole,
+  TimeOffEntry,
+  WorkShift,
 } from "@/lib/domain/types"
 
 /**
@@ -40,6 +45,21 @@ export interface Snapshot {
   messages: Message[]
   agentEvents: AgentEvent[]
   agentSettings: AgentSettings
+  shopSettings: ShopSettings
+  /** Francos con motivo, para Ajustes. (Cada barbero trae además los suyos sin motivo, para los horarios.) */
+  timeOff: TimeOffEntry[]
+  /** Cierres de caja de los últimos 400 días. */
+  cashClosures: CashClosure[]
+}
+
+export type ServiceInput = Omit<Service, "id"> & { id?: string }
+
+export interface StaffInput {
+  id?: string
+  name: string
+  role: StaffRole
+  commissionPct: number
+  active: boolean
 }
 
 export type NewClient = Pick<Client, "name" | "phone" | "channel" | "notes" | "preferredStaffId">
@@ -124,6 +144,20 @@ export interface Store {
   addMessage(message: NewMessage): Promise<{ id: string } | null>
 
   recordAgentRun(run: AgentRunRecord): Promise<void>
+
+  /* ── Ajustes ── */
+  /** Crea (sin id) o actualiza un servicio. Devuelve el id. */
+  saveService(service: ServiceInput): Promise<string>
+  /** Crea (sin id, con el horario del local por defecto) o actualiza un barbero. Devuelve el id. */
+  saveStaff(member: StaffInput): Promise<string>
+  /** Reemplaza el horario semanal completo de un barbero. */
+  setStaffSchedule(staffId: string, shifts: WorkShift[]): Promise<void>
+  addTimeOff(entry: Omit<TimeOffEntry, "id">): Promise<void>
+  removeTimeOff(id: string): Promise<void>
+  updateShopSettings(patch: Partial<ShopSettings>): Promise<void>
+
+  /** Guarda (o corrige) el cierre de caja de ese día. */
+  closeCashDay(closure: CashClosure): Promise<void>
 }
 
 export type { AppointmentStatus }

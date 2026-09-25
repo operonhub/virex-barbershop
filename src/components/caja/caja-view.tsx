@@ -7,13 +7,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button"
 import { Panel } from "@/components/shell/page-header"
 import { ChargeDialog } from "./charge-dialog"
-import { addExpense } from "@/lib/data/actions"
+import { addExpense, closeCash } from "@/lib/data/actions"
 import { formatARS, formatNumber, METHOD_LABEL, METHODS, pct } from "@/lib/money"
 import { hm } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import type { MoneySummary, StaffLine } from "@/lib/domain/finance"
 import type { LoyaltyStatus } from "@/lib/domain/loyalty"
-import type { Appointment, Client, Expense, ExpenseCategory, Payment, PaymentMethod, Service, Staff } from "@/lib/domain/types"
+import type { Appointment, CashClosure, Client, Expense, ExpenseCategory, Payment, PaymentMethod, Service, Staff } from "@/lib/domain/types"
 
 const METHOD_ICON: Record<PaymentMethod, typeof Banknote> = {
   efectivo: Banknote,
@@ -33,8 +33,6 @@ const METHOD_SHADE: Record<PaymentMethod, string> = {
 }
 
 /** Fondo fijo de la caja al abrir. Se configura en Ajustes (a confirmar con Virex). */
-const OPENING_CASH = 20000
-
 export function CajaView({
   isToday,
   payments,
@@ -46,7 +44,15 @@ export function CajaView({
   services,
   clients,
   loyalty,
+  openingCash,
+  day,
+  closure,
 }: {
+  day: string
+  /** Cierre ya guardado de ese día, si lo hay. */
+  closure: CashClosure | null
+  /** Fondo de caja (Ajustes → Local). */
+  openingCash: number
   isToday: boolean
   payments: Payment[]
   expenses: Expense[]
@@ -65,7 +71,7 @@ export function CajaView({
   const clientOf = (id: string | null) => clients.find((c) => c.id === id)
   const staffOf = (id: string | null) => staff.find((s) => s.id === id)
   const cashExpenses = expenses.filter((e) => e.method === "efectivo").reduce((s, e) => s + e.amount, 0)
-  const expectedCash = OPENING_CASH + money.byMethod.efectivo - cashExpenses
+  const expectedCash = openingCash + money.byMethod.efectivo - cashExpenses
 
   return (
     <>
@@ -97,7 +103,7 @@ export function CajaView({
                 <p className="eyebrow">Efectivo en caja</p>
                 <p className="num mt-2 font-wide text-[24px] font-semibold text-ivory">{formatARS(expectedCash)}</p>
                 <p className="text-[12px] text-ivory-3">
-                  fondo <span className="num">{formatARS(OPENING_CASH)}</span> + cobros − gastos
+                  fondo <span className="num">{formatARS(openingCash)}</span> + cobros − gastos
                 </p>
               </div>
             </div>
@@ -242,10 +248,36 @@ export function CajaView({
             )}
           </Panel>
 
-          {isToday && (
-            <Button variant="outline" size="lg" className="h-11 w-full gap-2" onClick={() => setCloseOpen(true)}>
-              <Lock className="size-4" /> Cerrar la caja del día
-            </Button>
+          {closure ? (
+            <section className="panel px-5 py-4">
+              <p className="flex items-center gap-2 text-[13.5px] font-semibold text-ivory font-wide">
+                <Lock className="size-4 text-ivory-3" /> Caja cerrada a las {hm(closure.closedAt)}
+              </p>
+              <dl className="mt-2 space-y-1 text-[13px]">
+                <div className="flex justify-between text-ivory-2">
+                  <dt>Contado</dt>
+                  <dd className="num">{formatARS(closure.countedCash)}</dd>
+                </div>
+                <div className="flex justify-between text-ivory-2">
+                  <dt>Esperado al cerrar</dt>
+                  <dd className="num">{formatARS(closure.expectedCash)}</dd>
+                </div>
+              </dl>
+              <DiffLine diff={closure.countedCash - closure.expectedCash} className="mt-2" />
+              {closure.expectedCash !== expectedCash && (
+                <p className="mt-2 text-[12px] text-ivory-3">Hubo movimientos después del cierre: hoy se esperan {formatARS(expectedCash)}.</p>
+              )}
+              {closure.notes && <p className="mt-2 text-[12.5px] text-ivory-3">“{closure.notes}”</p>}
+              <Button variant="ghost" size="sm" className="mt-2 -ml-2" onClick={() => setCloseOpen(true)}>
+                Corregir el cierre
+              </Button>
+            </section>
+          ) : (
+            isToday && (
+              <Button variant="outline" size="lg" className="h-11 w-full gap-2" onClick={() => setCloseOpen(true)}>
+                <Lock className="size-4" /> Cerrar la caja del día
+              </Button>
+            )
           )}
         </aside>
       </div>
@@ -263,7 +295,7 @@ export function CajaView({
         />
       )}
       <ExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} />
-      <CloseDialog open={closeOpen} onOpenChange={setCloseOpen} expected={expectedCash} money={money} />
+      {closeOpen && <CloseDialog onClose={() => setCloseOpen(false)} day={day} expected={expectedCash} money={money} previous={closure} />}
     </>
   )
 }
@@ -362,27 +394,52 @@ function ExpenseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
  * Es el "fin" del día (peak-end): tiene que cerrar con una sensación de orden.
  * TODO(supabase): persistir en `cash_sessions` (ver 0001_core.sql).
  */
+function DiffLine({ diff, className }: { diff: number; className?: string }) {
+  return (
+    <p className={cn("text-[13.5px] font-medium", diff === 0 ? "text-ok" : Math.abs(diff) < 1000 ? "text-ivory-2" : "text-danger", className)}>
+      {diff === 0 ? "Cierra justo. 👌" : diff > 0 ? `Sobran ${formatARS(diff)}` : `Faltan ${formatARS(-diff)}`}
+    </p>
+  )
+}
+
+/**
+ * Cierre de caja. Se manda sólo lo contado: el esperado lo recalcula el
+ * servidor, así nadie lo acomoda para que "cierre justo". Queda guardado.
+ */
 function CloseDialog({
-  open,
-  onOpenChange,
+  onClose,
+  day,
   expected,
   money,
+  previous,
 }: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
+  onClose: () => void
+  day: string
   expected: number
   money: MoneySummary
+  previous: CashClosure | null
 }) {
-  const [counted, setCounted] = useState("")
+  const [counted, setCounted] = useState(previous ? String(previous.countedCash) : "")
+  const [notes, setNotes] = useState(previous?.notes ?? "")
+  const [pending, startTransition] = useTransition()
   const value = Number(counted.replace(/\D/g, ""))
   const diff = counted ? value - expected : null
 
+  function submit() {
+    startTransition(async () => {
+      const res = await closeCash({ day, counted: value, notes })
+      if (!res.ok) return void toast.error(res.error)
+      toast.success(previous ? "Cierre corregido" : "Caja cerrada", { description: `Hoy entraron ${formatARS(money.gross)}. Buen día de trabajo.` })
+      onClose()
+    })
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle className="font-display text-[20px]">Cierre de caja</DialogTitle>
-          <DialogDescription className="text-ivory-3">Contá el efectivo del cajón y cargalo.</DialogDescription>
+          <DialogTitle className="font-display text-[20px]">{previous ? "Corregir el cierre" : "Cierre de caja"}</DialogTitle>
+          <DialogDescription className="text-ivory-3">Contá el efectivo del cajón y cargalo. Queda guardado.</DialogDescription>
         </DialogHeader>
         <dl className="space-y-1.5 rounded-xl bg-surface-2 px-4 py-3 text-[13px]">
           <div className="flex justify-between text-ivory-2">
@@ -402,21 +459,15 @@ function CloseDialog({
           placeholder="Efectivo contado"
           className="num h-12 w-full rounded-lg border border-line-strong bg-surface-2 px-4 font-wide text-[20px] text-ivory placeholder:text-[15px] placeholder:text-ivory-3 focus:border-gold/60 focus:outline-none"
         />
-        {diff !== null && (
-          <p className={cn("text-[13.5px] font-medium", diff === 0 ? "text-ok" : Math.abs(diff) < 1000 ? "text-ivory-2" : "text-danger")}>
-            {diff === 0 ? "Cierra justo. 👌" : diff > 0 ? `Sobran ${formatARS(diff)}` : `Faltan ${formatARS(-diff)}`}
-          </p>
-        )}
-        <Button
-          size="lg"
-          className="h-10 w-full font-semibold"
-          disabled={!counted}
-          onClick={() => {
-            toast.success("Caja cerrada", { description: `Hoy entraron ${formatARS(money.gross)}. Buen día de trabajo.` })
-            onOpenChange(false)
-          }}
-        >
-          Cerrar caja
+        {diff !== null && <DiffLine diff={diff} />}
+        <input
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Nota (opcional): ej. faltan $1.000 del cambio"
+          className="h-10 w-full rounded-lg border border-line-strong bg-surface-2 px-3 text-[13.5px] text-ivory placeholder:text-ivory-3 focus:outline-none"
+        />
+        <Button size="lg" className="h-10 w-full font-semibold" disabled={!counted || pending} onClick={submit}>
+          {pending ? "Guardando…" : previous ? "Guardar corrección" : "Cerrar caja"}
         </Button>
       </DialogContent>
     </Dialog>

@@ -198,6 +198,36 @@ export async function addExpense(input: {
   return { ok: true }
 }
 
+/**
+ * Cierre de caja. La pantalla manda SÓLO lo contado: el efectivo esperado lo
+ * recalcula el servidor (fondo + cobros en efectivo − gastos en efectivo del
+ * día), así nadie lo ajusta para que "cierre justo". Uno por día: corregir
+ * reemplaza el anterior.
+ */
+export async function closeCash(input: { day: string; counted: number; notes?: string }): Promise<Result<{ expected: number; difference: number }>> {
+  await assertPanelSession()
+  if (!validDay(input.day)) return { ok: false, error: "Día inválido." }
+  const counted = Math.round(Number(input.counted))
+  if (!Number.isFinite(counted) || counted < 0 || counted > 100_000_000) return { ok: false, error: "Revisá el monto contado." }
+  const s = await db()
+  const n = await now()
+  if (input.day > dayKey(n)) return { ok: false, error: "No se puede cerrar un día que todavía no llegó." }
+  const cashIn = s.payments.filter((p) => p.method === "efectivo" && dayKey(p.paidAt) === input.day).reduce((sum, p) => sum + p.amount, 0)
+  const cashOut = s.expenses.filter((e) => e.method === "efectivo" && dayKey(e.paidAt) === input.day).reduce((sum, e) => sum + e.amount, 0)
+  const openingCash = s.cashClosures.find((c) => c.day === input.day)?.openingCash ?? s.shopSettings.openingCash
+  const expected = openingCash + cashIn - cashOut
+  await store().closeCashDay({
+    day: input.day,
+    openingCash,
+    expectedCash: expected,
+    countedCash: counted,
+    closedAt: n.toISOString(),
+    notes: String(input.notes ?? "").trim().slice(0, 200) || null,
+  })
+  refresh()
+  return { ok: true, data: { expected, difference: counted - expected } }
+}
+
 /* ── Bandeja ── */
 
 /**

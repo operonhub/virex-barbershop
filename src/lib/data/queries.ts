@@ -244,6 +244,9 @@ export async function getCaja(day: string) {
     expenses,
     money: summarizePayments(payments),
     staffLines: staffBreakdown(payments, s.staff),
+    // Un día ya cerrado conserva el fondo con el que se cerró.
+    openingCash: s.cashClosures.find((c) => c.day === day)?.openingCash ?? s.shopSettings.openingCash,
+    closure: s.cashClosures.find((c) => c.day === day) ?? null,
     pending,
     staff: s.staff,
     services: s.services,

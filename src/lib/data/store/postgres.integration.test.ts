@@ -125,6 +125,39 @@ describe.skipIf(!url)("store de Postgres contra la base real", async () => {
     await expect(store.chargeAppointment(id, payment)).rejects.toBeInstanceOf(AlreadyChargedError)
   })
 
+  it("lee el horario de cada barbero y un franco cargado en la base bloquea sus turnos", async () => {
+    const { freeSlots } = await import("@/lib/domain/slots")
+    const snap = await store.snapshot()
+    const barber = snap.staff.find((s) => s.id === staffId)!
+    expect(barber.schedule).toContainEqual({ weekday: 2, start: "11:00", end: "20:00" })
+    const service = snap.services.find((s) => s.id === serviceId)!
+    const lejos = new Date("2031-03-01T12:00:00-03:00")
+    const antes = freeSlots({ day: DAY, service, staff: barber, appointments: [], now: lejos })
+    expect(antes).toContain("15:00")
+
+    const [off] = await sql`insert into staff_time_off (staff_id, starts_at, ends_at, reason)
+      values (${staffId}, ${DAY + "T00:00:00-03:00"}, ${DAY + "T23:59:00-03:00"}, ${TAG + " franco de prueba"}) returning id`
+    try {
+      const conFranco = (await store.snapshot()).staff.find((s) => s.id === staffId)!
+      expect(freeSlots({ day: DAY, service, staff: conFranco, appointments: [], now: lejos })).toEqual([])
+    } finally {
+      await sql`delete from staff_time_off where id = ${off.id}`
+    }
+  })
+
+  it("guarda el cierre de caja del día y corregirlo no duplica", async () => {
+    const base = { day: DAY, openingCash: 20000, expectedCash: 95000, closedAt: new Date().toISOString(), notes: `${TAG} cierre` }
+    try {
+      await store.closeCashDay({ ...base, countedCash: 94000 })
+      await store.closeCashDay({ ...base, countedCash: 95000 })
+      const rows = await sql`select counted_cash, difference from cash_sessions where business_day = ${DAY}`
+      expect(rows).toHaveLength(1)
+      expect(Number(rows[0].difference)).toBe(0)
+    } finally {
+      await sql`delete from cash_sessions where business_day = ${DAY}`
+    }
+  })
+
   it("un mensaje de WhatsApp repetido (reintento de Zernio) se guarda una sola vez", async () => {
     const conv = await store.upsertConversation({
       externalId: `prueba-${Date.now()}`,

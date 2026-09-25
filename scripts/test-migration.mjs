@@ -13,7 +13,7 @@ await db.exec(`
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
   create role anon; create role authenticated;
 `)
-for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql"]) {
+for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql"]) {
   await db.exec(readFileSync(`supabase/migrations/${f}`, "utf8"))
   console.log(`✓ ${f} aplicada`)
 }
@@ -58,4 +58,16 @@ try { await pay("servicio", 10000); console.log("✗ ERROR: cobró el turno dos 
 catch { console.log("✓ rechazó un segundo cobro del mismo turno") }
 const settings = (await db.query(`select opening_cash, deposit_enabled from shop_settings`)).rows
 console.log("✓ configuración del local creada:", JSON.stringify(settings[0]))
+
+// 0004: un cierre de caja por día; corregir = actualizar el mismo.
+const close = (counted) => db.query(
+  `insert into cash_sessions (business_day, opening_cash, expected_cash, counted_cash, closed_at, closed_by_name)
+   values ('2026-09-19', 20000, 95000, $1, now(), 'Panel')
+   on conflict (business_day) do update set counted_cash = excluded.counted_cash, closed_at = excluded.closed_at
+   returning difference`, [counted])
+console.log("✓ cierre guardado, diferencia:", (await close(94000)).rows[0].difference)
+console.log("✓ corrección del mismo día, diferencia:", (await close(95000)).rows[0].difference)
+const n = (await db.query(`select count(*)::int as n from cash_sessions where business_day = '2026-09-19'`)).rows[0].n
+if (n !== 1) { console.log("✗ ERROR: quedaron", n, "cierres del mismo día"); process.exit(1) }
+console.log("✓ sigue habiendo un solo cierre para ese día")
 await db.close()

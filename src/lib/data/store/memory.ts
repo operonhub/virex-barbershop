@@ -152,4 +152,59 @@ export const memoryStore: Store = {
   async recordAgentRun() {
     // La demo no audita corridas: el costo se ve en el playground de /agente.
   },
+
+  async saveService({ id, ...data }) {
+    const s = state()
+    const found = id ? s.services.find((x) => x.id === id) : undefined
+    if (found) {
+      Object.assign(found, data)
+      return found.id
+    }
+    const newIdValue = newId("sv")
+    s.services.push({ id: newIdValue, ...data })
+    return newIdValue
+  },
+
+  async saveStaff({ id, ...data }) {
+    const s = state()
+    const found = id ? s.staff.find((x) => x.id === id) : undefined
+    if (found) {
+      Object.assign(found, data)
+      return found.id
+    }
+    const newIdValue = newId("st")
+    s.staff.push({ id: newIdValue, skipsServiceIds: [], ...data })
+    return newIdValue
+  },
+
+  async setStaffSchedule(staffId, shifts) {
+    const m = state().staff.find((x) => x.id === staffId)
+    if (m) m.schedule = shifts
+  },
+
+  async addTimeOff(entry) {
+    const s = state()
+    s.timeOff.push({ id: newId("fr"), ...entry })
+    const m = s.staff.find((x) => x.id === entry.staffId)
+    if (m) m.timeOff = [...(m.timeOff ?? []), { startsAt: entry.startsAt, endsAt: entry.endsAt }]
+  },
+
+  async removeTimeOff(id) {
+    const s = state()
+    const entry = s.timeOff.find((t) => t.id === id)
+    if (!entry) return
+    s.timeOff = s.timeOff.filter((t) => t.id !== id)
+    const m = s.staff.find((x) => x.id === entry.staffId)
+    if (m) m.timeOff = (m.timeOff ?? []).filter((t) => !(t.startsAt === entry.startsAt && t.endsAt === entry.endsAt))
+  },
+
+  async updateShopSettings(patch) {
+    const s = state()
+    s.shopSettings = { ...s.shopSettings, ...patch }
+  },
+
+  async closeCashDay(closure) {
+    const s = state()
+    s.cashClosures = [...s.cashClosures.filter((c) => c.day !== closure.day), closure]
+  },
 }

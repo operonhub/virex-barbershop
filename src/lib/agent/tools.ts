@@ -1,7 +1,7 @@
 import "server-only"
 import { db, store } from "@/lib/data/repo"
 import { SlotTakenError } from "@/lib/data/store/types"
-import { freeSlots, freeSlotsAnyStaff, isOpen } from "@/lib/domain/slots"
+import { freeSlots, freeSlotsAnyStaff, isOpen, worksOn } from "@/lib/domain/slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import { addDays, at, dayKey, formatDayLong, hm } from "@/lib/time"
 import type { AgentActionKind, Channel, Service, Staff } from "@/lib/domain/types"
@@ -32,6 +32,12 @@ export interface ToolContext {
   now: Date
   /** La conversación hasta el último mensaje del cliente: para saber qué pidió o aceptó. */
   history?: TurnInput[]
+  /**
+   * Ensayo (el chat de prueba de /agente con la base real): todas las
+   * validaciones corren igual, pero nada se escribe. Así probar al agente no
+   * deja turnos falsos ocupando sillas de verdad.
+   */
+  dryRun?: boolean
 }
 
 export interface ToolOutcome {
@@ -157,6 +163,13 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         while (!isOpen(next)) next = addDays(next, 1)
         return { result: { ok: true, cerrado: true, dia: formatDayLong(input.fecha), proximo_dia_abierto: next } }
       }
+      const asked = input.barbero_id === "cualquiera" ? undefined : member(input.barbero_id)
+      if (asked && !worksOn(asked, input.fecha)) {
+        return {
+          result: { ok: true, dia: formatDayLong(input.fecha), barbero: asked.name, barbero_no_atiende_ese_dia: true, horarios: [] },
+          action: "consulta_respondida",
+        }
+      }
       const base = { day: input.fecha, service: svc, appointments: s.appointments, now: ctx.now }
       const slots =
         input.barbero_id === "cualquiera"
@@ -205,6 +218,12 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       }
 
       const start = at(input.fecha, input.hora)
+      if (ctx.dryRun) {
+        return {
+          result: { ok: true, ensayo: true, turno_id: "ensayo", dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name, precio: svc.price },
+          action: "turno_creado",
+        }
+      }
       let created: { appointmentId: string; clientId: string }
       try {
         created = await store().createAppointment({
@@ -273,6 +292,9 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         return fail(`${m.name} no tiene libre ese horario. Consultá disponibilidad.`)
       }
       const start = at(input.fecha, input.hora)
+      if (ctx.dryRun) {
+        return { result: { ok: true, ensayo: true, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name }, action: "turno_reprogramado" }
+      }
       try {
         await store().updateAppointment(appt.id, {
           startsAt: start.toISOString(),
@@ -293,7 +315,9 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       if (!perms.cancel) return fail("El dueño no habilitó cancelar. Derivá a una persona.")
       const appt = s.appointments.find((a) => a.id === input.turno_id)
       if (!appt || appt.clientId !== ctx.clientId) return fail("No encontré ese turno entre los del cliente.")
-      await store().updateAppointment(appt.id, { status: "cancelado", notes: `Cancelado por el agente: ${String(input.motivo).slice(0, 200)}` })
+      if (!ctx.dryRun) {
+        await store().updateAppointment(appt.id, { status: "cancelado", notes: `Cancelado por el agente: ${String(input.motivo).slice(0, 200)}` })
+      }
       return { result: { ok: true, cancelado: true }, action: "turno_cancelado" }
     }
 
@@ -308,7 +332,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
     }
 
     case "derivar_a_humano": {
-      if (ctx.conversationId) {
+      if (ctx.conversationId && !ctx.dryRun) {
         await store().updateConversation(ctx.conversationId, { mode: "humano", needsHuman: true, handoffReason: String(input.motivo).slice(0, 120) })
       }
       return { result: { ok: true, derivado: true }, action: "derivado_humano" }

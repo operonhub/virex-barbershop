@@ -23,13 +23,44 @@ const BLOCKING = new Set<Appointment["status"]>(["pendiente", "confirmado", "en_
 export interface SlotQuery {
   day: string
   service: Pick<Service, "id" | "durationMin">
-  staff: Pick<Staff, "id" | "skipsServiceIds">
+  staff: Pick<Staff, "id" | "skipsServiceIds" | "schedule" | "timeOff">
   appointments: Appointment[]
   /** Cada cuánto se ofrecen horarios. Por defecto, la grilla del local (turnos de una hora). */
   stepMin?: number
   /** Anticipación mínima para reservar hoy (no ofrecer "en 5 minutos"). */
   leadMin?: number
   now?: Date
+}
+
+/**
+ * Franjas en que ese barbero atiende ese día, en minutos. Sin horario propio
+ * (la demo) sigue el del local; con horario propio, sólo sus franjas, y
+ * siempre dentro del horario del local.
+ */
+function shiftsFor(staff: Pick<Staff, "schedule">, day: string): [number, number][] {
+  const shopOpen = hmToMinutes(BRAND.openingHours.open)
+  const shopClose = hmToMinutes(BRAND.openingHours.close)
+  if (!staff.schedule) return [[shopOpen, shopClose]]
+  const wd = weekday(day)
+  return staff.schedule
+    .filter((s) => s.weekday === wd)
+    .map((s) => [Math.max(shopOpen, hmToMinutes(s.start)), Math.min(shopClose, hmToMinutes(s.end))] as [number, number])
+    .filter(([a, b]) => b > a)
+    .sort((a, b) => a[0] - b[0])
+}
+
+/**
+ * ¿Ese barbero atiende ese día? No, si no tiene franjas ese día de la semana
+ * o si un franco le cubre todas. Sirve para que el agente diga "no atiende
+ * los jueves" en vez de "no queda lugar" (para el cliente no es lo mismo).
+ */
+export function worksOn(staff: Pick<Staff, "schedule" | "timeOff">, day: string): boolean {
+  if (!isOpen(day)) return false
+  const shifts = shiftsFor(staff, day)
+  if (!shifts.length) return false
+  const dayStart = at(day, "00:00").getTime()
+  const off = (staff.timeOff ?? []).map((t) => [(new Date(t.startsAt).getTime() - dayStart) / 60_000, (new Date(t.endsAt).getTime() - dayStart) / 60_000])
+  return shifts.some(([a, b]) => !off.some(([s, e]) => s <= a && e >= b))
 }
 
 export function isOpen(day: string): boolean {
@@ -48,29 +79,34 @@ export function freeSlots({
   if (!isOpen(day)) return []
   if (staff.skipsServiceIds.includes(service.id)) return []
 
-  const open = hmToMinutes(BRAND.openingHours.open)
-  const close = hmToMinutes(BRAND.openingHours.close)
-
   const busy = appointments
     .filter((a) => a.staffId === staff.id && BLOCKING.has(a.status) && dayKey(a.startsAt) === day)
     .map((a) => [minutesOfDay(a.startsAt), minutesOfDay(a.endsAt)] as const)
 
+  // Francos y bloqueos que tocan este día, recortados a [0, 24h).
+  const dayStart = at(day, "00:00").getTime()
+  const off = (staff.timeOff ?? [])
+    .map((t) => [(new Date(t.startsAt).getTime() - dayStart) / 60_000, (new Date(t.endsAt).getTime() - dayStart) / 60_000] as const)
+    .filter(([s, e]) => e > 0 && s < 24 * 60)
+
   const earliest = day === dayKey(now) ? minutesOfDay(now) + leadMin : -Infinity
 
   const slots: string[] = []
-  // El turno tiene que TERMINAR antes del cierre, no sólo empezar.
-  for (let start = open; start + service.durationMin <= close; start += stepMin) {
-    if (start < earliest) continue
-    const end = start + service.durationMin
-    const collides = busy.some(([s, e]) => start < e && end > s)
-    if (!collides) slots.push(minutesToHm(start))
+  for (const [open, close] of shiftsFor(staff, day)) {
+    // El turno tiene que TERMINAR antes del fin de la franja, no sólo empezar.
+    for (let start = open; start + service.durationMin <= close; start += stepMin) {
+      if (start < earliest) continue
+      const end = start + service.durationMin
+      const collides = busy.some(([s, e]) => start < e && end > s) || off.some(([s, e]) => start < e && end > s)
+      if (!collides) slots.push(minutesToHm(start))
+    }
   }
   return slots
 }
 
 /** Para "con cualquiera": el primer barbero libre en cada horario. */
 export function freeSlotsAnyStaff(
-  query: Omit<SlotQuery, "staff"> & { staff: Pick<Staff, "id" | "skipsServiceIds">[] }
+  query: Omit<SlotQuery, "staff"> & { staff: Pick<Staff, "id" | "skipsServiceIds" | "schedule" | "timeOff">[] }
 ): { time: string; staffId: string }[] {
   const byTime = new Map<string, string>()
   for (const member of query.staff) {

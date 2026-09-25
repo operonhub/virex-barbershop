@@ -3,10 +3,13 @@ import { Check, CircleDashed, ExternalLink } from "lucide-react"
 import { PageBody, PageHeader, Panel } from "@/components/shell/page-header"
 import { ChannelDot } from "@/components/brand/channel-icons"
 import { BRAND } from "@/config/brand"
-import { db } from "@/lib/data/repo"
+import { db, now } from "@/lib/data/repo"
+import { ServicesEditor } from "@/components/settings/services-editor"
+import { TeamEditor } from "@/components/settings/team-editor"
+import { ShopSettingsForm } from "@/components/settings/shop-settings-form"
+import { dayKey } from "@/lib/time"
 import { PROVIDER_LABEL, readAgentConfig } from "@/lib/agent/config"
 import { readZernioConfig, readZernioWebhookConfig } from "@/lib/zernio/config"
-import { formatARS } from "@/lib/money"
 import { cn } from "@/lib/utils"
 
 export const metadata = { title: "Ajustes" }
@@ -48,45 +51,9 @@ export default async function AjustesPage({ searchParams }: PageProps<"/ajustes"
       </nav>
 
       <div className="mt-5 max-w-3xl">
-        {tab === "servicios" && (
-          <Panel title="Servicios y precios" bodyClassName="px-0 pb-1">
-            <p className="px-5 pb-3 text-[12.5px] text-ivory-3">⚠ Precios y duraciones de ejemplo: se confirman con Virex.</p>
-            <ul>
-              {s.services.map((sv) => (
-                <li key={sv.id} className="flex items-center gap-4 border-t border-line px-5 py-3">
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-medium text-ivory">{sv.name}</span>
-                    <span className="block text-[12px] text-ivory-3">
-                      {sv.durationMin} min{sv.countsForLoyalty ? " · suma sello de fidelidad" : ""}
-                    </span>
-                  </span>
-                  <span className="num text-[14px] font-medium text-ivory">{formatARS(sv.price)}</span>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        )}
+        {tab === "servicios" && <ServicesEditor services={s.services} />}
 
-        {tab === "equipo" && (
-          <Panel title="Equipo" bodyClassName="px-0 pb-1">
-            <p className="px-5 pb-3 text-[12.5px] text-ivory-3">⚠ Nombres y comisiones de ejemplo.</p>
-            <ul>
-              {s.staff.map((m) => (
-                <li key={m.id} className="flex items-center gap-4 border-t border-line px-5 py-3">
-                  <span className="grid size-9 place-items-center rounded-full bg-surface-3 text-[13px] font-semibold text-ivory">{m.name[0]}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-medium text-ivory">{m.name}</span>
-                    <span className="block text-[12px] text-ivory-3">
-                      {m.role === "dueno" ? "Dueño" : `Barbero · ${m.commissionPct}% de comisión + propinas`}
-                      {m.skipsServiceIds.length > 0 &&
-                        ` · no hace ${m.skipsServiceIds.map((id) => s.services.find((x) => x.id === id)?.name).join(", ")}`}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        )}
+        {tab === "equipo" && <TeamEditor staff={s.staff} timeOff={s.timeOff} today={dayKey(await now())} />}
 
         {tab === "local" && (
           <div className="space-y-5">
@@ -97,6 +64,10 @@ export default async function AjustesPage({ searchParams }: PageProps<"/ajustes"
                 <Item label="Instagram" value={`@${BRAND.instagram}`} />
                 <Item label="Zona horaria" value="Argentina (UTC−3)" />
               </dl>
+            </Panel>
+            <Panel title="Caja">
+              <ShopSettingsForm settings={s.shopSettings} />
+              <p className="mt-3 text-[12.5px] text-ivory-3">Con este monto arranca la caja cada día: el efectivo esperado es fondo + cobros en efectivo − gastos en efectivo.</p>
             </Panel>
             <Panel title="Tarjeta de fidelidad">
               <p className="text-[14px] text-ivory-2">

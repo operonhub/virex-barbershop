@@ -77,7 +77,9 @@ src/lib/data/store/         La interfaz `Store` y sus dos implementaciones: memo
                             postgres.ts (Supabase, con `postgres`). Los errores de la base se
                             traducen: 23P01 → SlotTakenError, 23505 en cobros → AlreadyChargedError.
 src/lib/data/queries.ts     Una consulta por pantalla (arma exactamente lo que la página necesita).
-src/lib/data/actions.ts     Server actions (crear turno, cobrar, mensajes, modo IA/humano…).
+src/lib/data/actions.ts     Server actions (crear turno, cobrar, cerrar caja, mensajes, modo IA/humano…).
+src/lib/data/settings-actions.ts  Ajustes: servicios, equipo, horario semanal, francos, fondo de caja.
+src/components/settings/    Editores de Ajustes (servicios, equipo con horario y francos, local).
 src/lib/agent/              config, prompt, tools (7 herramientas), run (loop), providers/ (Gemini, Claude),
                             respond (bandeja ↔ agente ↔ Zernio), handoff (red de seguridad), actions.
 src/lib/zernio/             Cliente de Zernio portado de operon-crm (probado en producción).
@@ -87,7 +89,8 @@ src/lib/chart-palette.ts    Paleta de datos para gráficos (validada para dalton
 src/components/brand/       Isotipo (virex-mark), wordmark, intro, íconos de canal, sello Operon.
 src/components/ui/          Componentes shadcn (base-nova, Base UI). Tocar lo mínimo.
 supabase/migrations/        0001 esquema + RLS + EXCLUDE · 0002 horarios por barbero, francos, seña,
-                            config del local · 0003 endurecer (revisor de seguridad de Supabase).
+                            config del local · 0003 endurecer (revisor de seguridad de Supabase) ·
+                            0004 cierre de caja (uno por día, `business_day` único).
 supabase/seed.sql           Datos reales (barberos, servicios, horarios, reglas del agente). Idempotente.
 public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 ```
@@ -110,7 +113,11 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 
 - **Un solo cálculo de horarios libres:** `freeSlots` / `freeSlotsAnyStaff` en
   `lib/domain/slots.ts`. Lo usan el agente, el diálogo de nuevo turno y la reserva web. No
-  duplicar esa lógica en ningún componente.
+  duplicar esa lógica en ningún componente. Respeta el **horario propio de cada barbero**
+  (`staff.schedule`, tabla `staff_schedules`; sin horario = el del local) y sus **francos**
+  (`staff.timeOff`). `worksOn()` dice si atiende ese día.
+- **Chat de prueba del agente en ensayo** con la base real (`ToolContext.dryRun`): corre todas
+  las validaciones y no escribe nada. En la demo en memoria sí agenda.
 - **El doble turno lo frena la base**, no sólo la app: `appointments_no_overlap` (EXCLUDE sobre
   `tstzrange(starts_at, ends_at, '[)')` por barbero; cancelados y no-show liberan la silla).
 - **La fidelidad se deriva de los pagos**, no se guarda un contador. El descuento lo recalcula

@@ -98,8 +98,13 @@ Todo esto tarda días por razones ajenas, así que arranca ya y en paralelo:
 (`supabase/seed.sql`). ✅ Capa de datos: `Store` con memoria y Postgres; pantallas, acciones,
 agente y webhook escriben en la base. ✅ Pruebas de integración contra la base real (doble
 reserva simultánea → pasa una sola, doble cobro, mensaje repetido). ✅ Login simple
-(`PANEL_PASSWORD`) en lugar de usuarios de Supabase por ahora. **Falta:** horarios/francos por
-barbero en `freeSlots`, Ajustes editables, cierre de caja persistente.
+(`PANEL_PASSWORD`) en lugar de usuarios de Supabase por ahora.
+
+**Estado 24/09 (noche):** ✅ Chat de prueba del agente en **modo ensayo** con la base real (valida
+todo, no guarda). ✅ **Horario y francos por barbero** respetados por `freeSlots` (el agente dice
+"no atiende los jueves"). ✅ **Ajustes editables:** servicios y precios, equipo (comisión, alta y
+baja), horario semanal, francos/vacaciones, fondo de caja. ✅ **Cierre de caja guardado** (0004:
+uno por día; el esperado lo calcula el servidor). **Fase 2 terminada.**
 
 La promesa de la arquitectura: **se reescribe lo de adentro de la capa de datos, las pantallas
 no se tocan.**

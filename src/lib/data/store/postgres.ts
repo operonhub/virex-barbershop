@@ -186,7 +186,7 @@ export const postgresStore: Store = {
 
   async snapshot(): Promise<Snapshot> {
     const sql = sqlClient()
-    const [staff, services, clients, appointments, payments, expenses, conversations, messages, settings] = await Promise.all([
+    const [staff, services, clients, appointments, payments, expenses, conversations, messages, settings, shifts, timeOff, shop, closures] = await Promise.all([
       sql`select s.*, coalesce(array_agg(e.service_id) filter (where e.service_id is not null), '{}') as skips
           from staff s left join staff_service_exclusions e on e.staff_id = s.id
           group by s.id order by s.id`,
@@ -198,13 +198,22 @@ export const postgresStore: Store = {
       sql`select * from conversations order by last_message_at desc nulls last`,
       sql`select * from messages where sent_at > now() - make_interval(days => ${MESSAGES_DAYS}) order by sent_at`,
       sql`select * from agent_settings where id = 1`,
+      sql`select staff_id, weekday, to_char(start_time, 'HH24:MI') as start, to_char(end_time, 'HH24:MI') as "end" from staff_schedules order by weekday, start_time`,
+      sql`select id, staff_id, starts_at, ends_at, reason from staff_time_off where ends_at > now() - interval '1 day' order by starts_at`,
+      sql`select * from shop_settings where id = 1`,
+      sql`select to_char(business_day, 'YYYY-MM-DD') as day, opening_cash, expected_cash, counted_cash, closed_at, notes
+          from cash_sessions where business_day > current_date - ${HISTORY_DAYS}::int and closed_at is not null order by business_day`,
     ])
     const convs = conversations.map(toConversation)
     const msgs = messages.map(toMessage)
     return {
       now: new Date().toISOString(),
       simulated: false,
-      staff: staff.map(toStaff),
+      staff: staff.map((r) => ({
+        ...toStaff(r),
+        schedule: shifts.filter((x) => x.staff_id === r.id).map((x) => ({ weekday: Number(x.weekday), start: x.start as string, end: x.end as string })),
+        timeOff: timeOff.filter((x) => x.staff_id === r.id).map((x) => ({ startsAt: isoOr(x.starts_at as Date), endsAt: isoOr(x.ends_at as Date) })),
+      })),
       services: services.map(toService),
       clients: clients.map(toClient),
       appointments: appointments.map(toAppointment),
@@ -214,6 +223,28 @@ export const postgresStore: Store = {
       messages: msgs,
       agentEvents: deriveAgentEvents(msgs, convs),
       agentSettings: toAgentSettings(settings[0]),
+      shopSettings: {
+        openingCash: Number(shop[0].opening_cash),
+        depositEnabled: shop[0].deposit_enabled as boolean,
+        depositAmount: Number(shop[0].deposit_amount),
+        depositHoldMin: Number(shop[0].deposit_hold_min),
+        remindersEnabled: shop[0].reminders_enabled as boolean,
+      },
+      timeOff: timeOff.map((x) => ({
+        id: x.id as string,
+        staffId: x.staff_id as string,
+        startsAt: isoOr(x.starts_at as Date),
+        endsAt: isoOr(x.ends_at as Date),
+        reason: (x.reason as string) ?? null,
+      })),
+      cashClosures: closures.map((c) => ({
+        day: c.day as string,
+        openingCash: Number(c.opening_cash),
+        expectedCash: Number(c.expected_cash),
+        countedCash: Number(c.counted_cash),
+        closedAt: isoOr(c.closed_at as Date),
+        notes: (c.notes as string) ?? null,
+      })),
     }
   },
 
@@ -336,6 +367,76 @@ export const postgresStore: Store = {
       on conflict (zernio_id) do nothing
       returning id`
     return rows.length ? { id: rows[0].id as string } : null
+  },
+
+  async saveService({ id, name, category, durationMin, price, countsForLoyalty, active }) {
+    const sql = sqlClient()
+    if (id) {
+      await sql`update services set name = ${name}, category = ${category}, duration_min = ${durationMin}, price = ${price},
+                counts_for_loyalty = ${countsForLoyalty}, active = ${active} where id = ${id}`
+      return id
+    }
+    const [row] = await sql`
+      insert into services (name, category, duration_min, price, counts_for_loyalty, active, sort)
+      values (${name}, ${category}, ${durationMin}, ${price}, ${countsForLoyalty}, ${active}, (select coalesce(max(sort), 0) + 1 from services))
+      returning id`
+    return row.id as string
+  },
+
+  async saveStaff({ id, name, role, commissionPct, active }) {
+    const sql = sqlClient()
+    if (id) {
+      await sql`update staff set name = ${name}, role = ${role}, commission_pct = ${commissionPct}, active = ${active} where id = ${id}`
+      return id
+    }
+    return sql.begin(async (tx) => {
+      const [row] = await tx`insert into staff (name, role, commission_pct, active) values (${name}, ${role}, ${commissionPct}, ${active}) returning id`
+      // Un barbero nuevo arranca con el horario del local (mar–sáb 11–20); después se ajusta.
+      await tx`insert into staff_schedules (staff_id, weekday, start_time, end_time)
+               select ${row.id}, d, '11:00', '20:00' from generate_series(2, 6) as d`
+      return row.id as string
+    })
+  },
+
+  async setStaffSchedule(staffId, shifts) {
+    const sql = sqlClient()
+    await sql.begin(async (tx) => {
+      await tx`delete from staff_schedules where staff_id = ${staffId}`
+      for (const s of shifts) {
+        await tx`insert into staff_schedules (staff_id, weekday, start_time, end_time) values (${staffId}, ${s.weekday}, ${s.start}, ${s.end})`
+      }
+    })
+  },
+
+  async addTimeOff({ staffId, startsAt, endsAt, reason }) {
+    const sql = sqlClient()
+    await sql`insert into staff_time_off (staff_id, starts_at, ends_at, reason) values (${staffId}, ${startsAt}, ${endsAt}, ${reason})`
+  },
+
+  async removeTimeOff(id) {
+    const sql = sqlClient()
+    await sql`delete from staff_time_off where id = ${id}`
+  },
+
+  async updateShopSettings(patch) {
+    const row: Record<string, unknown> = { updated_at: new Date() }
+    if (patch.openingCash !== undefined) row.opening_cash = patch.openingCash
+    if (patch.depositEnabled !== undefined) row.deposit_enabled = patch.depositEnabled
+    if (patch.depositAmount !== undefined) row.deposit_amount = patch.depositAmount
+    if (patch.depositHoldMin !== undefined) row.deposit_hold_min = patch.depositHoldMin
+    if (patch.remindersEnabled !== undefined) row.reminders_enabled = patch.remindersEnabled
+    const sql = sqlClient()
+    await sql`update shop_settings set ${sql(row)} where id = 1`
+  },
+
+  async closeCashDay(c) {
+    const sql = sqlClient()
+    await sql`
+      insert into cash_sessions (business_day, opened_at, opening_cash, expected_cash, counted_cash, closed_at, closed_by_name, notes)
+      values (${c.day}, ${c.day + "T00:00:00-03:00"}, ${c.openingCash}, ${c.expectedCash}, ${c.countedCash}, ${c.closedAt}, 'Panel', ${c.notes})
+      on conflict (business_day) do update set
+        opening_cash = excluded.opening_cash, expected_cash = excluded.expected_cash,
+        counted_cash = excluded.counted_cash, closed_at = excluded.closed_at, notes = excluded.notes`
   },
 
   async recordAgentRun(r) {

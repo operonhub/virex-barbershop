@@ -32,6 +32,51 @@ export interface Staff {
   active: boolean
   /** Servicios que NO hace (ej. color). Vacío = hace todos. */
   skipsServiceIds: string[]
+  /**
+   * Horario propio por día de la semana. `undefined` = sigue el horario del
+   * local (la demo). Con la base, un día sin franjas = ese día no trabaja.
+   */
+  schedule?: WorkShift[]
+  /** Francos, vacaciones, turnos médicos: rangos en que no atiende. Sin motivo (puede llegar a la web pública). */
+  timeOff?: { startsAt: string; endsAt: string }[]
+}
+
+/** Configuración del local editable desde Ajustes (tabla `shop_settings`). */
+export interface ShopSettings {
+  /** Efectivo con el que abre la caja cada día. */
+  openingCash: number
+  depositEnabled: boolean
+  depositAmount: number
+  depositHoldMin: number
+  remindersEnabled: boolean
+}
+
+/** Cierre de caja de un día (uno por día; corregir lo actualiza). */
+export interface CashClosure {
+  /** AAAA-MM-DD, hora argentina. */
+  day: string
+  openingCash: number
+  expectedCash: number
+  countedCash: number
+  closedAt: string
+  notes: string | null
+}
+
+/** Franco, vacaciones o bloqueo, con el motivo (sólo para el panel). */
+export interface TimeOffEntry {
+  id: string
+  staffId: string
+  startsAt: string
+  endsAt: string
+  reason: string | null
+}
+
+export interface WorkShift {
+  /** 0 = domingo … 6 = sábado. */
+  weekday: number
+  /** "HH:MM" */
+  start: string
+  end: string
 }
 
 export type ServiceCategory = "corte" | "barba" | "combo" | "color" | "extra"
