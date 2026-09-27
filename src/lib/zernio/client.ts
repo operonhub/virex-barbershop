@@ -380,3 +380,30 @@ export async function sendMessage(
     data: { messageId: root?.data?.messageId ?? root?.messageId ?? null },
   }
 }
+
+// ------------------------------------------------------------
+// Conectar cuentas
+// ------------------------------------------------------------
+
+/**
+ * Link para que el DUEÑO conecte su WhatsApp o su Instagram desde sus propios
+ * dispositivos (`GET /v1/connect/{platform}`). Se le manda por WhatsApp o mail:
+ * nadie tiene que pasar contraseñas ni códigos.
+ *
+ * WhatsApp sin `onboarding=api` ofrece "Coexistence": sigue usando la app
+ * WhatsApp Business en el celular (escanea un QR con ese celular). Cada
+ * profile de Zernio admite UN solo número: Virex tiene su propio profile.
+ */
+export async function getConnectUrl(
+  deps: ZernioDeps,
+  platform: "whatsapp" | "instagram",
+  redirectUrl: string
+): Promise<ZernioResult<{ authUrl: string }>> {
+  const profileId = deps.config.configured ? deps.config.profileId : null
+  const response = await zernioRequest(`/connect/${platform}`, { query: { profileId, redirect_url: redirectUrl } }, deps)
+  if (!response.ok) return response
+  const authUrl = (response.data as { authUrl?: unknown } | null)?.authUrl
+  return typeof authUrl === "string" && authUrl.startsWith("https://")
+    ? { ok: true, data: { authUrl } }
+    : describeZernioFailure("malformed")
+}

@@ -12,7 +12,7 @@
   try {
     var d = document.documentElement
     var key = "virex:intro"
-    if (location.pathname.indexOf("/reservar") === 0 || location.pathname.indexOf("/login") === 0) return
+    if (location.pathname.indexOf("/reservar") === 0 || location.pathname.indexOf("/login") === 0 || location.pathname.indexOf("/conectado") === 0) return
     if (location.search.indexOf("intro") > -1) sessionStorage.removeItem(key)
     if (sessionStorage.getItem(key)) return
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return

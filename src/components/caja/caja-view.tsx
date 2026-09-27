@@ -2,11 +2,12 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Banknote, CreditCard, Landmark, Lock, Plus, QrCode, Sparkles, Wallet } from "lucide-react"
+import { Banknote, CreditCard, Landmark, Lock, Plus, QrCode, Sparkles, Wallet, Zap } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Panel } from "@/components/shell/page-header"
 import { ChargeDialog } from "./charge-dialog"
+import { QuickChargeDialog } from "./quick-charge-dialog"
 import { addExpense, closeCash } from "@/lib/data/actions"
 import { formatARS, formatNumber, METHOD_LABEL, METHODS, pct } from "@/lib/money"
 import { hm } from "@/lib/time"
@@ -67,6 +68,7 @@ export function CajaView({
   const [chargingId, setChargingId] = useState<string | null>(null)
   const [expenseOpen, setExpenseOpen] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(false)
   const charging = pending.find((a) => a.id === chargingId)
   const clientOf = (id: string | null) => clients.find((c) => c.id === id)
   const staffOf = (id: string | null) => staff.find((s) => s.id === id)
@@ -169,6 +171,10 @@ export function CajaView({
         </div>
 
         <aside className="space-y-5">
+          <Button size="lg" className="h-11 w-full gap-2 text-[15px] font-semibold" onClick={() => setQuickOpen(true)}>
+            <Zap /> Cobro rápido (sin turno)
+          </Button>
+
           {pending.length > 0 && (
             <Panel title="Por cobrar" className="ring-1 ring-gold/25" bodyClassName="px-0 pb-1">
               <ul>
@@ -296,6 +302,7 @@ export function CajaView({
       )}
       <ExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} />
       {closeOpen && <CloseDialog onClose={() => setCloseOpen(false)} day={day} expected={expectedCash} money={money} previous={closure} />}
+      <QuickChargeDialog open={quickOpen} onOpenChange={setQuickOpen} staff={staff} services={services} clients={clients} loyalty={loyalty} />
     </>
   )
 }

@@ -149,6 +149,10 @@ export const memoryStore: Store = {
     return { id }
   },
 
+  async setMessageExternalId() {
+    // La demo no manda por Zernio: no hay ecos que reconocer.
+  },
+
   async recordAgentRun() {
     // La demo no audita corridas: el costo se ve en el playground de /agente.
   },

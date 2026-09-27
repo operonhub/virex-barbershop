@@ -3,13 +3,15 @@ import { Check, CircleDashed, ExternalLink } from "lucide-react"
 import { PageBody, PageHeader, Panel } from "@/components/shell/page-header"
 import { ChannelDot } from "@/components/brand/channel-icons"
 import { BRAND } from "@/config/brand"
-import { db, now } from "@/lib/data/repo"
+import { db, now, store } from "@/lib/data/repo"
 import { ServicesEditor } from "@/components/settings/services-editor"
 import { TeamEditor } from "@/components/settings/team-editor"
 import { ShopSettingsForm } from "@/components/settings/shop-settings-form"
 import { dayKey } from "@/lib/time"
 import { PROVIDER_LABEL, readAgentConfig } from "@/lib/agent/config"
 import { readZernioConfig, readZernioWebhookConfig } from "@/lib/zernio/config"
+import { listAccounts } from "@/lib/zernio/client"
+import { ConnectLink } from "@/components/settings/connect-link"
 import { cn } from "@/lib/utils"
 
 export const metadata = { title: "Ajustes" }
@@ -86,45 +88,63 @@ export default async function AjustesPage({ searchParams }: PageProps<"/ajustes"
 }
 
 /** Estado real de cada integración. Nada simulado: si falta algo, dice qué. */
-function Connections() {
+async function Connections() {
   const zernio = readZernioConfig()
   const webhook = readZernioWebhookConfig()
   const agent = readAgentConfig()
+  const accounts = zernio.configured ? await listAccounts({ config: zernio }) : null
+  const connected = (platform: "whatsapp" | "instagram") =>
+    accounts?.ok ? accounts.data.accounts.find((a) => a.platform === platform && a.isActive) : undefined
+  const channel = (platform: "whatsapp" | "instagram", label: string) => {
+    const account = connected(platform)
+    return {
+      name: label,
+      icon: <ChannelDot channel={platform} />,
+      ok: !!account,
+      detail: !zernio.configured
+        ? zernio.reason
+        : accounts && !accounts.ok
+          ? `No se pudo consultar Zernio: ${accounts.message}`
+          : account
+            ? `Conectado${account.username ? ` como ${platform === "instagram" ? "@" : ""}${account.username}` : account.displayName ? `: ${account.displayName}` : ""}.`
+            : platform === "whatsapp"
+              ? "Sin conectar. Generá el link y mandáselo al dueño: lo abre en una compu y escanea el QR con el celular del local (sigue usando WhatsApp Business como siempre)."
+              : "Sin conectar. Tiene que ser una cuenta profesional vinculada a una página de Facebook.",
+      action: zernio.configured && !account ? <ConnectLink platform={platform} label={label} /> : null,
+    }
+  }
   const rows = [
-    {
-      name: "Zernio (WhatsApp + Instagram)",
-      icon: (
-        <span className="flex -space-x-1">
-          <ChannelDot channel="whatsapp" />
-          <ChannelDot channel="instagram" />
-        </span>
-      ),
-      ok: zernio.configured,
-      detail: zernio.configured ? "Clave cargada. Falta conectar las cuentas del local en el panel de Zernio." : zernio.reason,
-    },
+    channel("whatsapp", "WhatsApp"),
+    channel("instagram", "Instagram"),
     {
       name: "Webhook de mensajes entrantes",
       icon: null,
       ok: webhook.configured,
-      detail: webhook.configured ? "Firma HMAC activa en /api/zernio/webhook." : webhook.reason,
+      detail: webhook.configured
+        ? "Firma activa. En Zernio tiene que estar registrado apuntando a /api/zernio/webhook de este panel, con el mismo secreto."
+        : webhook.reason,
+      action: null,
     },
     {
       name: `Agente IA (${PROVIDER_LABEL[agent.provider]})`,
       icon: null,
       ok: agent.configured,
       detail: agent.configured ? `Modelo ${agent.model}. Se cambia con AGENT_PROVIDER y AGENT_MODEL.` : agent.reason,
+      action: null,
+    },
+    {
+      name: "Base de datos (Supabase)",
+      icon: null,
+      ok: store().kind === "postgres",
+      detail: store().kind === "postgres" ? "Conectada: todo lo que se carga queda guardado." : "Modo demo: los datos viven en memoria y se pierden al reiniciar.",
+      action: null,
     },
     {
       name: "Mercado Pago",
       icon: null,
       ok: false,
-      detail: "Pendiente: definir con Virex si cobran seña al reservar. El módulo de cobros ya registra MP como medio de pago.",
-    },
-    {
-      name: "Base de datos (Supabase)",
-      icon: null,
-      ok: false,
-      detail: "Modo demo: los datos viven en memoria. El esquema está listo en supabase/migrations/0001_core.sql.",
+      detail: "Pendiente: definir con Virex si cobran seña al reservar.",
+      action: null,
     },
   ]
   return (
@@ -138,6 +158,7 @@ function Connections() {
                 {r.name} {r.icon}
               </span>
               <span className="block text-[12.5px] text-ivory-3">{r.detail}</span>
+              {r.action}
             </span>
           </li>
         ))}

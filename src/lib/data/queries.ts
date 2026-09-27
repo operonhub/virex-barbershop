@@ -251,9 +251,8 @@ export async function getCaja(day: string) {
     staff: s.staff,
     services: s.services,
     clients: s.clients,
-    loyalty: Object.fromEntries(
-      pending.map((a) => [a.clientId, loyaltyStatus(a.clientId, s.payments, s.services)])
-    ),
+    // De todos los clientes, no sólo los pendientes: el Cobro rápido busca en toda la lista.
+    loyalty: Object.fromEntries(s.clients.map((c) => [c.id, loyaltyStatus(c.id, s.payments, s.services)])),
   }
 }
 

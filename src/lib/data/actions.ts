@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { assertPanelSession } from "@/lib/auth/guard"
 import { db, now, store } from "./repo"
 import { AlreadyChargedError, SlotTakenError } from "./store/types"
+import { deliverToChannel } from "@/lib/zernio/deliver"
 import { at, dayKey } from "@/lib/time"
 import { freeSlots } from "@/lib/domain/slots"
 import { loyaltyDiscount, loyaltyStatus } from "@/lib/domain/loyalty"
@@ -177,6 +178,82 @@ export async function chargeAppointment(input: {
   return { ok: true, data: { amount, discount } }
 }
 
+/**
+ * Cobro rápido: alguien que cae sin turno (caminando). Crea el turno YA
+ * completado (origen `walk_in`) y lo cobra en el mismo paso, así queda
+ * registrado en la agenda, la caja, la comisión del barbero y la fidelidad —
+ * lo mismo que si hubiera pasado por WhatsApp. Sin esto, un corte cobrado
+ * "de una" no deja rastro en ningún lado.
+ */
+export async function quickCharge(input: {
+  staffId: string
+  serviceId: string
+  clientId?: string
+  newClient?: { name: string; phone?: string }
+  method: PaymentMethod
+  tip: number
+  useReward: boolean
+}): Promise<Result<{ amount: number; discount: number }>> {
+  await assertPanelSession()
+  const s = await db()
+  const service = s.services.find((x) => x.id === input.serviceId && x.active)
+  const staff = s.staff.find((x) => x.id === input.staffId && x.active)
+  if (!service || !staff) return { ok: false, error: "Elegí servicio y barbero." }
+
+  const name = input.newClient?.name.trim()
+  if (!input.clientId && !name) return { ok: false, error: "Falta el nombre del cliente." }
+
+  const n = await now()
+  let appointmentId: string
+  let clientId: string
+  try {
+    const created = await store().createAppointment({
+      appointment: {
+        clientId: input.clientId,
+        staffId: staff.id,
+        serviceId: service.id,
+        startsAt: n.toISOString(),
+        endsAt: new Date(n.getTime() + service.durationMin * 60_000).toISOString(),
+        status: "completado",
+        source: "walk_in",
+        price: service.price,
+        notes: null,
+        conversationId: null,
+      },
+      newClient: input.clientId
+        ? undefined
+        : { name: name!, phone: input.newClient?.phone?.trim() || null, channel: "whatsapp", notes: null, preferredStaffId: staff.id },
+    })
+    appointmentId = created.appointmentId
+    clientId = created.clientId
+  } catch (e) {
+    if (e instanceof SlotTakenError) return { ok: false, error: `${staff.name} ya tiene un turno justo ahora. Esperá que termine o cobralo desde su turno.` }
+    throw e
+  }
+
+  const status = loyaltyStatus(clientId, s.payments, s.services)
+  const discount = input.useReward ? loyaltyDiscount(status, service) : 0
+  const tip = Math.max(0, Math.round(input.tip || 0))
+  const amount = service.price - discount + tip
+  await store().chargeAppointment(appointmentId, {
+    appointmentId,
+    clientId,
+    staffId: staff.id,
+    serviceId: service.id,
+    concept: service.name,
+    kind: "servicio",
+    listPrice: service.price,
+    discount,
+    discountReason: discount > 0 ? "fidelidad" : null,
+    tip,
+    amount,
+    method: input.method,
+    paidAt: n.toISOString(),
+  })
+  refresh()
+  return { ok: true, data: { amount, discount } }
+}
+
 export async function addExpense(input: {
   category: ExpenseCategory
   description: string
@@ -231,11 +308,10 @@ export async function closeCash(input: { day: string; counted: number; notes?: s
 /* ── Bandeja ── */
 
 /**
- * Mensaje escrito por una persona del equipo. Al escribir, la conversación
- * pasa a modo humano: si el agente siguiera contestando, se pisarían.
- *
- * TODO(Fase 3): enviar por `sendMessage()` de Zernio con Idempotency-Key y
- * guardar el mensaje con el id que devuelve Zernio.
+ * Mensaje escrito por una persona del equipo desde la Bandeja. Se manda de
+ * verdad al WhatsApp/Instagram del cliente (por Zernio) y recién si salió se
+ * guarda. La conversación pasa a modo humano: si el agente siguiera
+ * contestando, se pisarían.
  */
 export async function sendStaffMessage(conversationId: string, body: string): Promise<Result> {
   await assertPanelSession()
@@ -246,8 +322,13 @@ export async function sendStaffMessage(conversationId: string, body: string): Pr
   if (!conv) return { ok: false, error: "No encontré la conversación." }
   // Login simple con contraseña compartida: todavía no se sabe QUIÉN escribe.
   const owner = s.staff.find((x) => x.role === "dueno") ?? s.staff[0]
-  const sentAt = (await now()).toISOString()
+  const n = await now()
+  const delivery = await deliverToChannel(conv, text, n)
+  if (!delivery.ok) return { ok: false, error: delivery.error }
+  const sentAt = n.toISOString()
   await store().addMessage({
+    // Con el id de Zernio: si el eco del webhook llegó antes, no se duplica.
+    externalId: delivery.externalId,
     conversationId,
     author: "staff",
     staffId: owner?.id ?? null,

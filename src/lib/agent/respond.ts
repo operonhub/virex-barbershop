@@ -2,8 +2,7 @@ import "server-only"
 import { db, now as clockNow, store } from "@/lib/data/repo"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import { dayKey, formatDayLong, hm, minutesOfDay } from "@/lib/time"
-import { readZernioConfig } from "@/lib/zernio/config"
-import { sendMessage } from "@/lib/zernio/client"
+import { deliverToChannel } from "@/lib/zernio/deliver"
 import type { NormalizedEvent } from "@/lib/zernio/events"
 import { buildContextNote, buildSystemPrompt } from "./prompt"
 import { runAgent, type TurnInput } from "./run"
@@ -40,6 +39,21 @@ export async function ingestInboxEvent(event: Extract<NormalizedEvent, { kind: "
   if (!m?.body) return null
 
   const inbound = m.direction === "inbound"
+  const body = m.body
+
+  if (!inbound) {
+    // Un mensaje saliente puede ser el ECO de algo que mandó el panel (el
+    // agente o alguien del equipo), o algo que el dueño escribió desde la app
+    // en el celular (Coexistence). El eco se reconoce por texto: el panel lo
+    // guarda ANTES de mandarlo, así que ya está.
+    const s = await db()
+    const since = new Date(m.sentAt).getTime() - 5 * 60_000
+    const isEcho = s.messages.some(
+      (x) => x.conversationId === conv.id && (x.author === "ia" || x.author === "staff") && x.body.trim() === body.trim() && new Date(x.sentAt).getTime() >= since
+    )
+    if (isEcho) return null
+  }
+
   const saved = await store().addMessage({
     externalId: m.externalId,
     conversationId: conv.id,
@@ -54,7 +68,10 @@ export async function ingestInboxEvent(event: Extract<NormalizedEvent, { kind: "
 
   await store().updateConversation(
     conv.id,
-    inbound ? { lastMessageAt: m.sentAt, lastInboundAt: m.sentAt, unread: conv.unread + 1 } : { lastMessageAt: m.sentAt }
+    inbound
+      ? { lastMessageAt: m.sentAt, lastInboundAt: m.sentAt, unread: conv.unread + 1 }
+      : // Respondió una persona desde el celular: el agente se corre de esta conversación.
+        { lastMessageAt: m.sentAt, mode: "humano", needsHuman: false }
   )
   return inbound ? conv.id : null
 }
@@ -116,17 +133,17 @@ export async function respondToConversation(conversationId: string): Promise<{ o
 
   const action = mainAction(result.actions.map((a) => a.action))
   const sentAt = new Date().toISOString()
+  // Se guarda ANTES de mandar: así, si el eco del webhook llega rápido, ya
+  // está en la base y se reconoce como propio.
   const saved = await store().addMessage({ conversationId: conv.id, author: "ia", staffId: null, body: result.reply, sentAt, action, actionRef: null })
   await store().updateConversation(conv.id, { lastMessageAt: sentAt, unread: 0, ...(result.clientId ? { clientId: result.clientId } : {}) })
 
-  const zernio = readZernioConfig()
-  if (zernio.configured && conv.externalId) {
-    const accountId = conv.accountExternalId || process.env.ZERNIO_ACCOUNT_ID || ""
-    const sent = await sendMessage({ config: zernio }, { conversationId: conv.externalId, accountId, body: result.reply, idempotencyKey: saved?.id ?? sentAt })
-    if (!sent.ok) {
-      await store().updateConversation(conv.id, { needsHuman: true, handoffReason: `No se pudo enviar por Zernio: ${sent.message}` })
-    }
+  const delivery = await deliverToChannel(conv, result.reply, now)
+  if (!delivery.ok) {
+    await store().updateConversation(conv.id, { needsHuman: true, handoffReason: delivery.error })
+    return { ok: false, reason: delivery.error }
   }
+  if (saved && delivery.externalId) await store().setMessageExternalId(saved.id, delivery.externalId)
   return { ok: true }
 }
 

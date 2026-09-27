@@ -77,12 +77,15 @@ src/lib/data/store/         La interfaz `Store` y sus dos implementaciones: memo
                             postgres.ts (Supabase, con `postgres`). Los errores de la base se
                             traducen: 23P01 → SlotTakenError, 23505 en cobros → AlreadyChargedError.
 src/lib/data/queries.ts     Una consulta por pantalla (arma exactamente lo que la página necesita).
-src/lib/data/actions.ts     Server actions (crear turno, cobrar, cerrar caja, mensajes, modo IA/humano…).
+src/lib/data/actions.ts     Server actions (crear turno, cobrar, cobro rápido, cerrar caja, mensajes…).
 src/lib/data/settings-actions.ts  Ajustes: servicios, equipo, horario semanal, francos, fondo de caja.
 src/components/settings/    Editores de Ajustes (servicios, equipo con horario y francos, local).
 src/lib/agent/              config, prompt, tools (7 herramientas), run (loop), providers/ (Gemini, Claude),
                             respond (bandeja ↔ agente ↔ Zernio), handoff (red de seguridad), actions.
-src/lib/zernio/             Cliente de Zernio portado de operon-crm (probado en producción).
+src/lib/zernio/             Cliente de Zernio portado de operon-crm. deliver.ts: manda al canal
+                            correcto (ventana de 24 h de WhatsApp), lo usan el agente y la Bandeja.
+                            actions.ts: genera el link para que el DUEÑO conecte WhatsApp/Instagram.
+src/app/conectado/          Página pública (sin login) adonde vuelve el dueño tras conectar.
 src/lib/time.ts             Hora argentina (−03:00 fija, sin horario de verano). `dayKey` = AAAA-MM-DD.
 src/lib/money.ts            Pesos enteros (sin centavos), formatos es-AR.
 src/lib/chart-palette.ts    Paleta de datos para gráficos (validada para daltonismo).
@@ -108,6 +111,16 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 - La reserva pública usa su propia action, `createPublicBooking` (sin sesión, acepta menos:
   cliente nuevo, origen web, grilla del local). No reutilizar `createAppointment` ahí.
 - Se reemplaza por usuarios de Supabase Auth en la Fase 2.
+
+## Cobro rápido (turnos sin WhatsApp)
+
+- **Regla de oro para el equipo:** todo corte se registra en el panel, hable o no por WhatsApp.
+  Lo que no está cargado, el agente lo puede ofrecer como libre (doble turno de hecho) y no
+  suma a la comisión, la fidelidad ni la caja del barbero.
+- `quickCharge` (`src/lib/data/actions.ts`) crea el turno YA completado (`source: "walk_in"`) y
+  lo cobra en un solo paso — pantalla en `src/components/caja/quick-charge-dialog.tsx`, botón
+  "Cobro rápido" en Caja. Mismas reglas que un turno normal: fidelidad recalculada por el
+  servidor, `SlotTakenError` si ese barbero ya tiene algo agendado justo en ese momento.
 
 ## Reglas de negocio que no se rompen
 
@@ -176,6 +189,24 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 - Tailwind v4 ya no pone la manito en los botones: está restituido en `globals.css`.
 - El sello "Hecho por Operon" (`components/brand/operon-badge.tsx`) va en el pie del panel y de
   la página pública. No sacarlo.
+
+## Conectar WhatsApp e Instagram (Fase 3)
+
+- **El dueño conecta sus propias cuentas, a distancia.** Desde Ajustes → Conexiones →
+  "Generar link" (`createConnectLink` en `src/lib/zernio/actions.ts`), se copia el link y se le
+  manda por WhatsApp o mail. Él lo abre en SUS dispositivos — nunca pasa contraseñas ni códigos.
+- WhatsApp necesita **WhatsApp Business** (no personal) en una cuenta de **Meta Business**. Sin
+  `onboarding=api` en la URL de conexión, ofrece "Coexistence": sigue usando la app en el
+  celular y sólo escanea un QR — conviene abrir el link en una compu y escanear con el celular
+  del local.
+- Cada **profile de Zernio admite un solo WhatsApp** (`ZERNIO_PROFILE_ID`): Virex tiene el suyo.
+- Vuelve a `/conectado` (pública, sin datos sensibles: sólo dice si salió bien).
+- **Los ecos de lo que manda el panel se descartan** en `ingestInboxEvent` (mismo texto, mismo
+  autor, últimos 5 min): si no, un mensaje del agente o de una persona se duplicaría al volver
+  por el webhook.
+- Un mensaje **saliente que NO es un eco** es el dueño respondiendo desde el celular
+  (Coexistence): la conversación pasa a modo humano, para que el agente no le siga escribiendo
+  encima.
 
 ## Próximos pasos: **`docs/ROADMAP.md`**
 

@@ -139,12 +139,21 @@ no se tocan.**
 7. **Script de carga inicial** (`scripts/seed-prod.mjs`): barberos, servicios y clientes
    reales. El `seed.ts` de demo queda sólo para la rama `demo`.
 
-## Fase 3 · Mar 29: Zernio real + agente en producción (1 día)
+## Fase 3 · Zernio real + agente en producción
 
-1. Sesión con el dueño (la de 0.2): conectar los canales y registrar el webhook
-   `https://<dominio-railway>/api/zernio/webhook` con su secreto.
-2. **`sendStaffMessage` enviando por Zernio de verdad** (hoy sólo guarda: TODO en
-   `actions.ts`), con Idempotency-Key, y guardando el mensaje con el id que devuelve Zernio.
+**Estado 27/09:** ✅ Link de conexión para que el dueño conecte WhatsApp/Instagram a distancia
+(`Ajustes → Conexiones`, sin pasar contraseñas). ✅ Página pública `/conectado`. ✅ Envío real por
+Zernio desde el agente y desde la Bandeja (antes sólo guardaba). ✅ Ventana de 24 h de WhatsApp
+respetada al enviar. ✅ Dedupe de ecos (lo que manda el panel no se duplica al volver por el
+webhook) y detección de respuestas del dueño desde el celular (pasa la conversación a modo
+humano). Probado de punta a punta con `scripts/webhook-smoke.mjs` contra la base real (41 tests
+unitarios + 8 de integración). **Falta:** que el dueño conecte de verdad (sesión con su
+celular), registrar el webhook en Zernio con el dominio de Railway, backfill de conversaciones
+viejas, tarea que recupera mensajes sin responder.
+
+1. Sesión con el dueño: conectar los canales (con el link que genera Ajustes) y registrar el
+   webhook `https://<dominio-railway>/api/zernio/webhook` con su secreto en el panel de Zernio.
+2. ~~`sendStaffMessage` enviando por Zernio de verdad~~ ✅ hecho el 27/09.
 3. **Que no se pierda ningún mensaje:** `after()` corre en memoria, así que si Railway
    reinicia el contenedor en medio de una respuesta, esa respuesta se pierde. Solución: una
    tarea cada 5 minutos que busca conversaciones en modo IA con un mensaje del cliente sin
@@ -153,6 +162,9 @@ no se tocan.**
    la aprobación tarda.
 5. Agente activo según la autonomía que defina el dueño, con **`shouldHandOff`** implementada
    (`src/lib/agent/handoff.ts`, la política queda del lado de Santiago).
+6. ✅ **Cobro rápido** (27/09): botón en Caja para el que cae sin turno. Sin esto, el equipo no
+   iba a cargar nada que no pasara por WhatsApp, y el sistema entero depende de que todo lo que
+   pasa en la barbería quede en el panel.
 
 ## Fase 4 · Mié 30: seña con Mercado Pago (1 día)
 

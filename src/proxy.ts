@@ -5,6 +5,7 @@ import { isValidSession, PANEL_COOKIE } from "@/lib/auth/session"
  * Portero del panel: sin sesión, cualquier página lleva a /login.
  *
  * Quedan afuera (públicos): la reserva online, el webhook de Zernio (/api),
+ * la vuelta de conectar WhatsApp/Instagram (/conectado),
  * la pantalla de login y los archivos estáticos. Las server actions además
  * chequean la sesión por su cuenta (`assertPanelSession`).
  */
@@ -22,5 +23,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|login|reservar|api/|icon.svg|favicon.ico|intro-boot.js).*)"],
+  matcher: ["/((?!_next/static|_next/image|login|reservar|conectado|api/|icon.svg|favicon.ico|intro-boot.js).*)"],
 }

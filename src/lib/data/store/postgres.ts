@@ -439,6 +439,13 @@ export const postgresStore: Store = {
         counted_cash = excluded.counted_cash, closed_at = excluded.closed_at, notes = excluded.notes`
   },
 
+  async setMessageExternalId(id, externalId) {
+    const sql = sqlClient()
+    // Si el eco del webhook ya lo guardó con ese id, no se pisa.
+    await sql`update messages set zernio_id = ${externalId}
+              where id = ${id} and zernio_id is null and not exists (select 1 from messages where zernio_id = ${externalId})`
+  },
+
   async recordAgentRun(r) {
     const sql = sqlClient()
     await sql`

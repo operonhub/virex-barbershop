@@ -143,6 +143,9 @@ export interface Store {
   /** Devuelve null si el mensaje ya estaba (mismo externalId). */
   addMessage(message: NewMessage): Promise<{ id: string } | null>
 
+  /** Anota el id que devolvió Zernio al enviar (para reconocer el eco del webhook). */
+  setMessageExternalId(id: string, externalId: string): Promise<void>
+
   recordAgentRun(run: AgentRunRecord): Promise<void>
 
   /* ── Ajustes ── */
