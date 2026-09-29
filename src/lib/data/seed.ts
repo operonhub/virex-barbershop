@@ -653,7 +653,7 @@ export function buildDemo(real = new Date()): DemoState {
     conversations,
     messages,
     agentEvents,
-    shopSettings: { openingCash: 20000, depositEnabled: false, depositAmount: 0, depositHoldMin: 15, remindersEnabled: false },
+    shopSettings: { openingCash: 20000, depositEnabled: false, depositAmount: 0, depositHoldMin: 15, remindersEnabled: false, slotStepMin: 60 },
     timeOff: [],
     fixedSlots: [],
     cashClosures: [],

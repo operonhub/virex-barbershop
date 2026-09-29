@@ -52,6 +52,22 @@ describe("freeSlots", () => {
     expect(slots).toEqual(["11:00", "12:00", "13:00", "14:00", "16:00", "17:00", "18:00", "19:00"])
   })
 
+  it("el intervalo es configurable: con 45 minutos arrancan a las 11:00, 11:45, 12:30…", () => {
+    const turno45 = { id: "sv-corte", durationMin: 45 }
+    const slots = freeSlots({ day: DAY, service: turno45, staff: leo, appointments: [], now: early, stepMin: 45 })
+    expect(slots.slice(0, 4)).toEqual(["11:00", "11:45", "12:30", "13:15"])
+    expect(slots.at(-1)).toBe("19:15") // 19:15 + 45' = 20:00, justo al cierre
+  })
+
+  it("con 30 minutos hay el doble de horarios que con 60", () => {
+    const hora = { id: "sv-corte", durationMin: 60 }
+    const cada60 = freeSlots({ day: DAY, service: hora, staff: leo, appointments: [], now: early, stepMin: 60 })
+    const cada30 = freeSlots({ day: DAY, service: hora, staff: leo, appointments: [], now: early, stepMin: 30 })
+    expect(cada60).toHaveLength(9) // 11:00 a 19:00
+    expect(cada30).toHaveLength(17) // 11:00, 11:30 … 19:00
+    expect(cada30).toContain("11:30")
+  })
+
   it("con horario propio, sólo ofrece sus franjas (y nada los días que no trabaja)", () => {
     const hora = { id: "sv-corte", durationMin: 60 }
     // Viernes 18/09 = 5. Trabaja 14 a 18 ese día; el jueves (4) no tiene franjas.

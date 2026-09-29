@@ -13,7 +13,7 @@ await db.exec(`
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
   create role anon; create role authenticated;
 `)
-for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql", "0005_turnos_fijos.sql", "0006_historial.sql"]) {
+for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql", "0005_turnos_fijos.sql", "0006_historial.sql", "0007_intervalo_de_horarios.sql"]) {
   await db.exec(readFileSync(`supabase/migrations/${f}`, "utf8"))
   console.log(`✓ ${f} aplicada`)
 }
@@ -84,5 +84,13 @@ for (const [label, run] of [
 ]) {
   try { await run(); console.log("✗ ERROR: aceptó un turno fijo", label); process.exit(1) }
   catch { console.log("✓ rechazó un turno fijo", label) }
+}
+// 0007: el intervalo de los horarios sólo admite 30, 45 o 60.
+const step=(m)=>db.query(`update shop_settings set slot_step_min = $1`,[m]);
+await step(45);
+console.log("✓ intervalo de 45 minutos aceptado");
+for (const m of [10, 90]) {
+  try { await step(m); console.log("✗ ERROR: aceptó un intervalo de", m); process.exit(1) }
+  catch { console.log("✓ rechazó un intervalo de", m, "minutos") }
 }
 await db.close()

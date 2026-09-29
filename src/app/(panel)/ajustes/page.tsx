@@ -7,6 +7,7 @@ import { db, now, store } from "@/lib/data/repo"
 import { ServicesEditor } from "@/components/settings/services-editor"
 import { TeamEditor } from "@/components/settings/team-editor"
 import { FixedSlotsEditor } from "@/components/settings/fixed-slots-editor"
+import { SlotStepForm } from "@/components/settings/slot-step-form"
 import { ShopSettingsForm } from "@/components/settings/shop-settings-form"
 import { DepositSettingsForm } from "@/components/settings/deposit-settings-form"
 import { dayKey } from "@/lib/time"
@@ -71,6 +72,9 @@ export default async function AjustesPage({ searchParams }: PageProps<"/ajustes"
                 <Item label="Instagram" value={`@${BRAND.instagram}`} />
                 <Item label="Zona horaria" value="Argentina (UTC−3)" />
               </dl>
+            </Panel>
+            <Panel title="Horarios que se ofrecen">
+              <SlotStepForm value={s.shopSettings.slotStepMin} />
             </Panel>
             <Panel title="Caja">
               <ShopSettingsForm settings={s.shopSettings} />

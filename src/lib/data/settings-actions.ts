@@ -226,6 +226,21 @@ export async function saveShopSettings(input: { openingCash: number }): Promise<
   return { ok: true }
 }
 
+const SLOT_STEPS = [30, 45, 60]
+
+/**
+ * Cada cuántos minutos se ofrece un horario (30, 45 o 60). Lo usan el agente,
+ * la reserva web y "Nuevo turno" a la vez. No toca los turnos ya cargados ni la
+ * duración de cada servicio (esa se cambia en Servicios).
+ */
+export async function saveSlotStep(minutes: number): Promise<Result> {
+  await assertPanelSession()
+  if (!SLOT_STEPS.includes(minutes)) return { ok: false, error: "Elegí 30, 45 o 60 minutos." }
+  await store().updateShopSettings({ slotStepMin: minutes })
+  refresh()
+  return { ok: true }
+}
+
 /**
  * Seña al reservar (Mercado Pago). Apagada por defecto: se prende cuando
  * Virex confirme que la cobra y por cuánto. Con `enabled: true` hace falta

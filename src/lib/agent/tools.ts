@@ -171,7 +171,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           action: "consulta_respondida",
         }
       }
-      const base = { day: input.fecha, service: svc, appointments: s.appointments, now: ctx.now }
+      const base = { day: input.fecha, service: svc, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin }
       const slots =
         input.barbero_id === "cualquiera"
           ? freeSlotsAnyStaff({ ...base, staff: s.staff.filter((x) => x.active) }).map((x) => ({
@@ -213,7 +213,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       const m = member(input.barbero_id)
       if (!svc || !m || !validDay(input.fecha) || typeof input.hora !== "string") return fail("Datos del turno inválidos.")
       if (!clientAgreedTo(input.hora, ctx.history ?? [])) return fail(NOT_AGREED)
-      const free = freeSlots({ day: input.fecha, service: svc, staff: m, appointments: s.appointments, now: ctx.now })
+      const free = freeSlots({ day: input.fecha, service: svc, staff: m, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin })
       if (!free.includes(input.hora)) {
         return fail(`${m.name} ya no tiene libre ${input.hora} el ${formatDayLong(input.fecha)}. Volvé a consultar disponibilidad.`)
       }
@@ -328,7 +328,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       const svc = service(appt.serviceId)!
       const m = member(appt.staffId)!
       const others = s.appointments.filter((a) => a.id !== appt.id)
-      if (!freeSlots({ day: input.fecha, service: svc, staff: m, appointments: others, now: ctx.now }).includes(input.hora)) {
+      if (!freeSlots({ day: input.fecha, service: svc, staff: m, appointments: others, now: ctx.now, stepMin: s.shopSettings.slotStepMin }).includes(input.hora)) {
         return fail(`${m.name} no tiene libre ese horario. Consultá disponibilidad.`)
       }
       const start = at(input.fecha, input.hora)

@@ -64,6 +64,7 @@ export default async function ReservarPage() {
           staff={s.staff}
           busy={busy}
           now={n.toISOString()}
+          stepMin={s.shopSettings.slotStepMin}
           deposit={s.shopSettings.depositEnabled ? { amount: s.shopSettings.depositAmount, holdMin: s.shopSettings.depositHoldMin } : null}
         />
       </main>

@@ -24,11 +24,14 @@ export function BookingFlow({
   busy,
   now,
   deposit,
+  stepMin,
 }: {
   services: Service[]
   staff: Staff[]
   busy: Appointment[]
   now: string
+  /** Cada cuántos minutos se ofrece un horario (Ajustes → Local). */
+  stepMin: number
   /** Si Virex cobra seña al reservar (Ajustes → Local). `null` = no cobra. */
   deposit: { amount: number; holdMin: number } | null
 }) {
@@ -58,11 +61,11 @@ export function BookingFlow({
 
   const slots = useMemo(() => {
     if (!service) return []
-    const base = { day, service, appointments: busy, now: new Date(now) }
+    const base = { day, service, appointments: busy, now: new Date(now), stepMin }
     if (staffId === "cualquiera") return freeSlotsAnyStaff({ ...base, staff: available })
     const m = available.find((s) => s.id === staffId)
     return m ? freeSlots({ ...base, staff: m }).map((time) => ({ time, staffId: m.id })) : []
-  }, [service, day, staffId, busy, now, available])
+  }, [service, day, staffId, busy, now, available, stepMin])
 
   const staffName = (id: string) => staff.find((s) => s.id === id)?.name
 

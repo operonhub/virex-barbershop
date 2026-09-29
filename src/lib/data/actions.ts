@@ -86,7 +86,8 @@ async function book(
   const staff = s.staff.find((x) => x.id === input.staffId && x.active)
   if (!service || !staff) return { ok: false, error: "Elegí servicio y barbero." }
 
-  const slots = freeSlots({ day: input.day, service, staff, appointments: s.appointments, ...grid, now: await now() })
+  // El panel pasa su propia grilla (cada 5 min); la web pública usa la del local (Ajustes).
+  const slots = freeSlots({ day: input.day, service, staff, appointments: s.appointments, ...grid, stepMin: grid.stepMin ?? s.shopSettings.slotStepMin, now: await now() })
   if (!slots.includes(input.time)) return { ok: false, error: `${staff.name} no tiene libre ese horario. Elegí otro.` }
 
   const name = input.newClient?.name.trim()

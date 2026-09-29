@@ -24,8 +24,10 @@ Mantenerlo así.
   sin ella, en desarrollo, usa la demo en memoria (`src/lib/data/seed.ts`). La rama `demo`
   (Vercel) es la vidriera de ventas con datos inventados.
 - **Datos reales (24/09):** mar–sáb de 11 a 20; barberos **Santiago, Sebastián y Nehemías**;
-  **Corte $15.000** y **Corte + barba $20.000**; todos los turnos duran **una hora** (el agente y
-  la web ofrecen horarios en punto: `BRAND.booking.slotStepMin`). Más la dirección y la tarjeta
+  **Corte $15.000** y **Corte + barba $20.000**; los turnos duran **una hora** (cada servicio tiene su
+  duración) y el agente y la web ofrecen horarios en punto. Ese intervalo (30, 45 o 60 min) se
+  cambia en Ajustes → Local (`shopSettings.slotStepMin`; `BRAND.booking.slotStepMin` es sólo el
+  valor por defecto). Más la dirección y la tarjeta
   de fidelidad (5 cortes → el 6to al 50 %).
 - Siguen siendo **supuestos**: quién es el dueño en el sistema (hoy Santiago) y las comisiones
   (50 %). Ver `docs/ROADMAP.md` → datos a pedir.
@@ -93,7 +95,13 @@ src/components/brand/       Isotipo (virex-mark), wordmark, intro, íconos de ca
 src/components/ui/          Componentes shadcn (base-nova, Base UI). Tocar lo mínimo.
 supabase/migrations/        0001 esquema + RLS + EXCLUDE · 0002 horarios por barbero, francos, seña,
                             config del local · 0003 endurecer (revisor de seguridad de Supabase) ·
-                            0004 cierre de caja (uno por día, `business_day` único).
+                            0004 cierre de caja (uno por día, `business_day` único) ·
+                            0005 turnos fijos (`fixed_slots`: semanales o de un día, bloquean
+                            `freeSlots` como un franco; `db()` los suma a `staff.timeOff`) ·
+                            0006 historial importado del Excel (`payments.imported/units`,
+                            `expenses.imported`; se carga con `scripts/importar-historial.mjs`,
+                            reglas en `src/lib/import/historial.ts`) · 0007 intervalo de horarios
+                            (`shop_settings.slot_step_min`: 30, 45 o 60).
 supabase/seed.sql           Datos reales (barberos, servicios, horarios, reglas del agente). Idempotente.
 public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 ```

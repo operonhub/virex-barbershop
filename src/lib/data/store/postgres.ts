@@ -249,6 +249,7 @@ export const postgresStore: Store = {
         depositAmount: Number(shop[0].deposit_amount),
         depositHoldMin: Number(shop[0].deposit_hold_min),
         remindersEnabled: shop[0].reminders_enabled as boolean,
+        slotStepMin: Number(shop[0].slot_step_min ?? 60),
       },
       timeOff: timeOff.map((x) => ({
         id: x.id as string,
@@ -490,6 +491,7 @@ export const postgresStore: Store = {
     if (patch.depositAmount !== undefined) row.deposit_amount = patch.depositAmount
     if (patch.depositHoldMin !== undefined) row.deposit_hold_min = patch.depositHoldMin
     if (patch.remindersEnabled !== undefined) row.reminders_enabled = patch.remindersEnabled
+    if (patch.slotStepMin !== undefined) row.slot_step_min = patch.slotStepMin
     const sql = sqlClient()
     await sql`update shop_settings set ${sql(row)} where id = 1`
   },

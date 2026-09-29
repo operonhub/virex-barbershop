@@ -24,6 +24,7 @@ export default async function PanelLayout({ children }: LayoutProps<"/">) {
           return d >= today && d <= horizon
         }),
         now: shell.now,
+        slotStepMin: s.shopSettings.slotStepMin,
       }}
     >
       <IntroOverlay />

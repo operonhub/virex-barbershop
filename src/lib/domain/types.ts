@@ -49,6 +49,8 @@ export interface ShopSettings {
   depositAmount: number
   depositHoldMin: number
   remindersEnabled: boolean
+  /** Cada cuántos minutos se ofrece un horario (30, 45 o 60). La duración de cada turno es la del servicio. */
+  slotStepMin: number
 }
 
 /** Cierre de caja de un día (uno por día; corregir lo actualiza). */
