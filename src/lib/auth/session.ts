@@ -27,6 +27,9 @@ export function sessionToken(password: string) {
  */
 export function isValidSession(cookie: string | undefined): boolean {
   const password = panelPassword()
+  // La demo pública (rama `demo`, datos inventados en memoria) se abre sin
+  // login, pero SÓLO si el entorno lo pide explícitamente con DATA_SOURCE=demo.
+  if (!password && process.env.DATA_SOURCE === "demo") return true
   if (!password) return process.env.NODE_ENV !== "production"
   return !!cookie && safeEqual(cookie, sessionToken(password))
 }
