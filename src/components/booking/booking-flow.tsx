@@ -23,11 +23,14 @@ export function BookingFlow({
   staff,
   busy,
   now,
+  deposit,
 }: {
   services: Service[]
   staff: Staff[]
   busy: Appointment[]
   now: string
+  /** Si Virex cobra seña al reservar (Ajustes → Local). `null` = no cobra. */
+  deposit: { amount: number; holdMin: number } | null
 }) {
   const today = dayKey(now)
   const days = useMemo(() => {
@@ -69,6 +72,7 @@ export function BookingFlow({
     startTransition(async () => {
       const res = await createPublicBooking({ day, time: slot.time, staffId: slot.staffId, serviceId: service.id, name, phone })
       if (!res.ok) setError(res.error)
+      else if (res.data?.checkoutUrl) window.location.href = res.data.checkoutUrl
       else setStep("listo")
     })
   }
@@ -220,6 +224,12 @@ export function BookingFlow({
               className="num h-12 w-full rounded-xl border border-line-strong bg-surface-1 px-4 text-[15px] text-ivory placeholder:text-ivory-3 focus:border-gold/60 focus:outline-none"
             />
           </div>
+          {deposit && (
+            <p className="rounded-xl bg-surface-2 px-4 py-3 text-[13px] text-ivory-2">
+              Para reservar hay que pagar una seña de <span className="num font-medium text-ivory">{formatARS(deposit.amount)}</span>. Tenés{" "}
+              {deposit.holdMin} minutos: si no llega el pago, el horario se libera solo.
+            </p>
+          )}
           {error && <p className="text-[13.5px] text-danger">{error}</p>}
           <Button
             size="lg"
@@ -227,7 +237,7 @@ export function BookingFlow({
             disabled={name.trim().length < 3 || phone.replace(/\D/g, "").length < 8 || pending}
             onClick={confirm}
           >
-            Confirmar turno
+            {pending ? "Un momento…" : deposit ? `Pagar la seña de ${formatARS(deposit.amount)}` : "Confirmar turno"}
           </Button>
         </section>
       )}

@@ -45,6 +45,7 @@ export function CajaView({
   services,
   clients,
   loyalty,
+  depositByAppointment,
   openingCash,
   day,
   closure,
@@ -64,6 +65,8 @@ export function CajaView({
   services: Service[]
   clients: Client[]
   loyalty: Record<string, LoyaltyStatus>
+  /** Seña ya pagada por turno (Mercado Pago), por id de turno. */
+  depositByAppointment: Record<string, number>
 }) {
   const [chargingId, setChargingId] = useState<string | null>(null)
   const [expenseOpen, setExpenseOpen] = useState(false)
@@ -194,6 +197,7 @@ export function CajaView({
                           </span>
                           <span className="block text-[12px] text-ivory-3">
                             {services.find((s) => s.id === a.serviceId)?.name} · {staffOf(a.staffId)?.name} · {hm(a.startsAt)}
+                            {depositByAppointment[a.id] > 0 && <span className="text-gold"> · con seña</span>}
                           </span>
                         </span>
                         <span className="text-[12.5px] font-semibold text-gold">Cobrar →</span>
@@ -298,6 +302,7 @@ export function CajaView({
           service={services.find((s) => s.id === charging.serviceId)!}
           staff={staffOf(charging.staffId)}
           loyalty={loyalty[charging.clientId]}
+          depositPaid={depositByAppointment[charging.id] ?? 0}
         />
       )}
       <ExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} />

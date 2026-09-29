@@ -62,7 +62,12 @@ export default async function FinanzasPage({ searchParams }: PageProps<"/finanza
       <PageHeader
         eyebrow="Finanzas"
         title={<span className="inline-block first-letter:uppercase">{formatMonth(month)}</span>}
-        description={d.isCurrent ? "Mes en curso. Las comparaciones son contra los mismos días del mes anterior." : "Mes cerrado."}
+        description={
+          (d.isCurrent ? "Mes en curso. Las comparaciones son contra los mismos días del mes anterior." : "Mes cerrado.") +
+          (d.hasImported
+            ? " Incluye el historial del Excel de antes del panel: ingresos, gastos y cortes por barbero. Turnos atendidos y ocupación cuentan desde que se usa la agenda."
+            : "")
+        }
         actions={
           <div className="flex items-center rounded-lg border border-line-strong">
             <Link href={`/finanzas?mes=${addMonths(month, -1)}`} aria-label="Mes anterior" className="grid size-10 place-items-center text-ivory-2 hover:text-ivory">

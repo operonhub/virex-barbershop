@@ -28,6 +28,7 @@ import type {
   ShopSettings,
   Staff,
   TimeOffEntry,
+  FixedSlot,
 } from "@/lib/domain/types"
 
 /**
@@ -44,7 +45,7 @@ import type {
  */
 
 /** Subirlo al cambiar el generador: invalida el estado demo guardado en memoria. */
-export const SEED_VERSION = 6
+export const SEED_VERSION = 7
 
 export interface DemoState {
   /** Instante que la demo considera "ahora". Ver `demoClock`. */
@@ -62,6 +63,7 @@ export interface DemoState {
   agentSettings: AgentSettings
   shopSettings: ShopSettings
   timeOff: TimeOffEntry[]
+  fixedSlots: FixedSlot[]
   cashClosures: CashClosure[]
 }
 
@@ -230,6 +232,7 @@ export function buildDemo(real = new Date()): DemoState {
       price: s.price,
       notes: null,
       conversationId: null,
+      holdExpiresAt: null,
       createdAt: minutesAgo(60 * 24 * 3),
       ...extra,
     }
@@ -652,6 +655,7 @@ export function buildDemo(real = new Date()): DemoState {
     agentEvents,
     shopSettings: { openingCash: 20000, depositEnabled: false, depositAmount: 0, depositHoldMin: 15, remindersEnabled: false },
     timeOff: [],
+    fixedSlots: [],
     cashClosures: [],
     agentSettings: {
       enabled: true,

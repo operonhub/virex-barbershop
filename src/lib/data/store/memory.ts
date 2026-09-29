@@ -20,7 +20,19 @@ const g = globalThis as unknown as { __virexDemo?: Holder }
 function state(): DemoState {
   const key = `${SEED_VERSION}:${dayKey(demoClock().now)}`
   if (!g.__virexDemo || g.__virexDemo.key !== key) g.__virexDemo = { key, state: buildDemo() }
+  sweepExpiredHolds(g.__virexDemo.state)
   return g.__virexDemo.state
+}
+
+/** Reservas con seña que vencieron sin pagar: se cancelan solas (igual que en Postgres). */
+function sweepExpiredHolds(s: DemoState) {
+  const now = (s.simulated ? new Date(s.now) : new Date()).getTime()
+  for (const a of s.appointments) {
+    if (a.status === "pendiente" && a.holdExpiresAt && new Date(a.holdExpiresAt).getTime() < now) {
+      a.status = "cancelado"
+      a.notes = `${a.notes ? a.notes + " · " : ""}Vencida sin seña`
+    }
+  }
 }
 
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
@@ -86,6 +98,18 @@ export const memoryStore: Store = {
     s.payments.push({ ...payment, id: newId("co") })
     const appt = s.appointments.find((a) => a.id === appointmentId)
     if (appt) appt.status = "completado"
+  },
+
+  async confirmDeposit(appointmentId, payment) {
+    const s = state()
+    const dup = s.payments.some(
+      (p) => (p.appointmentId === appointmentId && p.kind === "sena") || (payment.externalRef && p.externalRef === payment.externalRef)
+    )
+    if (dup) return { inserted: false }
+    s.payments.push({ ...payment, id: newId("co"), kind: "sena" })
+    const appt = s.appointments.find((a) => a.id === appointmentId)
+    if (appt?.status === "pendiente") appt.status = "confirmado"
+    return { inserted: true }
   },
 
   async addExpense(expense) {
@@ -200,6 +224,23 @@ export const memoryStore: Store = {
     s.timeOff = s.timeOff.filter((t) => t.id !== id)
     const m = s.staff.find((x) => x.id === entry.staffId)
     if (m) m.timeOff = (m.timeOff ?? []).filter((t) => !(t.startsAt === entry.startsAt && t.endsAt === entry.endsAt))
+  },
+
+  async saveFixedSlot(slot) {
+    const s = state()
+    const existing = slot.id ? s.fixedSlots.find((f) => f.id === slot.id) : undefined
+    if (existing) {
+      Object.assign(existing, slot)
+      return existing.id
+    }
+    const id = newId("fj")
+    s.fixedSlots.push({ ...slot, id })
+    return id
+  },
+
+  async removeFixedSlot(id) {
+    const s = state()
+    s.fixedSlots = s.fixedSlots.filter((f) => f.id !== id)
   },
 
   async updateShopSettings(patch) {

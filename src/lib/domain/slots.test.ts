@@ -13,7 +13,7 @@ const fine = { stepMin: 15 }
 const appt = (from: string, to: string, status: Appointment["status"] = "confirmado"): Appointment => ({
   id: from, clientId: "c", staffId: "st-leo", serviceId: "sv-corte",
   startsAt: at(DAY, from).toISOString(), endsAt: at(DAY, to).toISOString(),
-  status, source: "panel", price: 0, notes: null, conversationId: null, createdAt: "",
+  status, source: "panel", price: 0, notes: null, conversationId: null, holdExpiresAt: null, createdAt: "",
 })
 
 const early = new Date("2026-09-17T12:00:00-03:00")

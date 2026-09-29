@@ -6,7 +6,9 @@ import { BRAND } from "@/config/brand"
 import { db, now, store } from "@/lib/data/repo"
 import { ServicesEditor } from "@/components/settings/services-editor"
 import { TeamEditor } from "@/components/settings/team-editor"
+import { FixedSlotsEditor } from "@/components/settings/fixed-slots-editor"
 import { ShopSettingsForm } from "@/components/settings/shop-settings-form"
+import { DepositSettingsForm } from "@/components/settings/deposit-settings-form"
 import { dayKey } from "@/lib/time"
 import { PROVIDER_LABEL, readAgentConfig } from "@/lib/agent/config"
 import { readZernioConfig, readZernioWebhookConfig } from "@/lib/zernio/config"
@@ -19,6 +21,7 @@ export const metadata = { title: "Ajustes" }
 const TABS = [
   { id: "servicios", label: "Servicios" },
   { id: "equipo", label: "Equipo" },
+  { id: "fijos", label: "Turnos fijos" },
   { id: "local", label: "Local y fidelidad" },
   { id: "conexiones", label: "Conexiones" },
 ] as const
@@ -57,6 +60,8 @@ export default async function AjustesPage({ searchParams }: PageProps<"/ajustes"
 
         {tab === "equipo" && <TeamEditor staff={s.staff} timeOff={s.timeOff} today={dayKey(await now())} />}
 
+        {tab === "fijos" && <FixedSlotsEditor staff={s.staff} slots={s.fixedSlots} today={dayKey(await now())} />}
+
         {tab === "local" && (
           <div className="space-y-5">
             <Panel title="El local">
@@ -70,6 +75,9 @@ export default async function AjustesPage({ searchParams }: PageProps<"/ajustes"
             <Panel title="Caja">
               <ShopSettingsForm settings={s.shopSettings} />
               <p className="mt-3 text-[12.5px] text-ivory-3">Con este monto arranca la caja cada día: el efectivo esperado es fondo + cobros en efectivo − gastos en efectivo.</p>
+            </Panel>
+            <Panel title="Seña con Mercado Pago">
+              <DepositSettingsForm settings={s.shopSettings} />
             </Panel>
             <Panel title="Tarjeta de fidelidad">
               <p className="text-[14px] text-ivory-2">

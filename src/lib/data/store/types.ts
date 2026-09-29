@@ -8,6 +8,7 @@ import type {
   Client,
   Conversation,
   Expense,
+  FixedSlot,
   Message,
   Payment,
   Service,
@@ -48,6 +49,8 @@ export interface Snapshot {
   shopSettings: ShopSettings
   /** Francos con motivo, para Ajustes. (Cada barbero trae además los suyos sin motivo, para los horarios.) */
   timeOff: TimeOffEntry[]
+  /** Turnos fijos (semanales o de un día), para Ajustes. `db()` los suma a los bloqueos de cada barbero. */
+  fixedSlots: FixedSlot[]
   /** Cierres de caja de los últimos 400 días. */
   cashClosures: CashClosure[]
 }
@@ -131,6 +134,13 @@ export interface Store {
   /** Registra el cobro y deja el turno completado, juntos. Lanza AlreadyChargedError. */
   chargeAppointment(appointmentId: string, payment: NewPayment): Promise<void>
 
+  /**
+   * Registra la seña de Mercado Pago y pasa el turno de "pendiente" a
+   * "confirmado". A prueba de reintentos del webhook: si ya se había
+   * registrado (mismo turno o mismo pago de MP), no hace nada de nuevo.
+   */
+  confirmDeposit(appointmentId: string, payment: NewPayment): Promise<{ inserted: boolean }>
+
   addExpense(expense: NewExpense): Promise<void>
 
   updateAgentSettings(patch: Partial<AgentSettings>): Promise<void>
@@ -157,6 +167,9 @@ export interface Store {
   setStaffSchedule(staffId: string, shifts: WorkShift[]): Promise<void>
   addTimeOff(entry: Omit<TimeOffEntry, "id">): Promise<void>
   removeTimeOff(id: string): Promise<void>
+  /** Crea (sin id) o actualiza un turno fijo. Devuelve el id. */
+  saveFixedSlot(slot: Omit<FixedSlot, "id"> & { id?: string }): Promise<string>
+  removeFixedSlot(id: string): Promise<void>
   updateShopSettings(patch: Partial<ShopSettings>): Promise<void>
 
   /** Guarda (o corrige) el cierre de caja de ese día. */

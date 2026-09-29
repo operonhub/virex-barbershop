@@ -35,7 +35,7 @@ export async function testAgent(history: TurnInput[]): Promise<
     services: s.services,
     staff: s.staff,
     history,
-    systemPrompt: buildSystemPrompt(s.agentSettings, s.services, s.staff),
+    systemPrompt: buildSystemPrompt(s.agentSettings, s.services, s.staff, s.shopSettings),
     contextNote: await buildContextFor(conv, now),
     toolContext: { conversationId: null, clientId: null, participantName: conv.participantName, channel: "whatsapp", now, dryRun },
   })

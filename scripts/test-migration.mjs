@@ -13,7 +13,7 @@ await db.exec(`
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
   create role anon; create role authenticated;
 `)
-for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql"]) {
+for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql", "0005_turnos_fijos.sql", "0006_historial.sql"]) {
   await db.exec(readFileSync(`supabase/migrations/${f}`, "utf8"))
   console.log(`✓ ${f} aplicada`)
 }
@@ -70,4 +70,19 @@ console.log("✓ corrección del mismo día, diferencia:", (await close(95000)).
 const n = (await db.query(`select count(*)::int as n from cash_sessions where business_day = '2026-09-19'`)).rows[0].n
 if (n !== 1) { console.log("✗ ERROR: quedaron", n, "cierres del mismo día"); process.exit(1) }
 console.log("✓ sigue habiendo un solo cierre para ese día")
+
+// 0005: un turno fijo es semanal O de un día, nunca los dos ni ninguno.
+const fijo = (weekday, onDate, from = "18:00", to = "19:00") =>
+  db.query(`insert into fixed_slots (staff_id, weekday, on_date, start_time, end_time) values ($1,$2,$3,$4,$5)`, [staff, weekday, onDate, from, to])
+await fijo(2, null)
+await fijo(null, "2026-10-03")
+console.log("✓ turno fijo semanal y de un día aceptados")
+for (const [label, run] of [
+  ["semanal y de un día a la vez", () => fijo(2, "2026-10-03")],
+  ["sin día ni fecha", () => fijo(null, null)],
+  ["con la hora de fin antes de la de inicio", () => fijo(2, null, "19:00", "18:00")],
+]) {
+  try { await run(); console.log("✗ ERROR: aceptó un turno fijo", label); process.exit(1) }
+  catch { console.log("✓ rechazó un turno fijo", label) }
+}
 await db.close()

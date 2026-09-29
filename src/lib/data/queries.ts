@@ -229,7 +229,8 @@ export async function getCaja(day: string) {
   const n = await now()
   const payments = paymentsOnDay(s.payments, day).sort((a, b) => b.paidAt.localeCompare(a.paidAt))
   const expenses = s.expenses.filter((e) => dayKey(e.paidAt) === day)
-  const paidIds = new Set(s.payments.map((p) => p.appointmentId))
+  // Sólo el cobro final cierra el turno: una seña (kind "sena") no lo saca de "Por cobrar".
+  const paidIds = new Set(s.payments.filter((p) => p.kind === "servicio").map((p) => p.appointmentId))
   const pending = s.appointments.filter(
     (a) =>
       dayKey(a.startsAt) === day &&
@@ -253,6 +254,10 @@ export async function getCaja(day: string) {
     clients: s.clients,
     // De todos los clientes, no sólo los pendientes: el Cobro rápido busca en toda la lista.
     loyalty: Object.fromEntries(s.clients.map((c) => [c.id, loyaltyStatus(c.id, s.payments, s.services)])),
+    // Seña ya pagada por turno (Mercado Pago): se descuenta al cobrar el resto.
+    depositByAppointment: Object.fromEntries(
+      s.payments.filter((p) => p.kind === "sena" && p.appointmentId).map((p) => [p.appointmentId as string, p.amount])
+    ),
   }
 }
 
@@ -288,6 +293,8 @@ export async function getFinanzas(month: string) {
     now: n.toISOString(),
     month,
     isCurrent: month === monthKey(today),
+    /** El mes incluye cobros o gastos cargados del Excel de antes del panel (sin turnos detrás). */
+    hasImported: pay.some((p) => p.imported) || exp.some((e) => e.imported),
     money,
     moneyPrev: summarizePayments(payPrev),
     moneyPrevSpan,

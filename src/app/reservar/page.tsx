@@ -41,6 +41,7 @@ export default async function ReservarPage() {
       price: 0,
       notes: null,
       conversationId: null,
+      holdExpiresAt: null,
       createdAt: "",
     }))
 
@@ -58,7 +59,13 @@ export default async function ReservarPage() {
         </div>
       </header>
       <main className="flex-1 pt-8">
-        <BookingFlow services={s.services} staff={s.staff} busy={busy} now={n.toISOString()} />
+        <BookingFlow
+          services={s.services}
+          staff={s.staff}
+          busy={busy}
+          now={n.toISOString()}
+          deposit={s.shopSettings.depositEnabled ? { amount: s.shopSettings.depositAmount, holdMin: s.shopSettings.depositHoldMin } : null}
+        />
       </main>
       <footer className="flex justify-center py-6">
         <OperonBadge />

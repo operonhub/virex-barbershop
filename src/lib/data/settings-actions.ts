@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { assertPanelSession } from "@/lib/auth/guard"
 import { BRAND } from "@/config/brand"
-import { at, hmToMinutes } from "@/lib/time"
-import { db, store } from "./repo"
+import { at, dayKey, hmToMinutes, minutesOfDay } from "@/lib/time"
+import { db, now, store } from "./repo"
 import type { ServiceCategory, WorkShift } from "@/lib/domain/types"
 
 /**
@@ -143,11 +143,106 @@ export async function removeTimeOff(id: string): Promise<Result> {
   return { ok: true }
 }
 
+/**
+ * Turno fijo: un horario que queda reservado para alguien, todas las semanas
+ * (`weekday`) o un día puntual (`onDate`). El agente y la reserva web dejan de
+ * ofrecerlo. Avisa si ya hay turnos cargados en ese horario: no los cancela
+ * (eso lo decide una persona).
+ */
+export async function saveFixedSlot(input: {
+  id?: string
+  staffId: string
+  repeat: "weekly" | "once"
+  weekday?: number
+  onDate?: string
+  start: string
+  end: string
+  label?: string
+  active?: boolean
+}): Promise<Result & { overlapping?: number }> {
+  await assertPanelSession()
+  const s = await db()
+  const member = s.staff.find((m) => m.id === input.staffId)
+  if (!member) return { ok: false, error: "Elegí quién atiende." }
+  if (input.id && !s.fixedSlots.some((f) => f.id === input.id)) return { ok: false, error: "No encontré ese turno fijo." }
+  if (!HHMM.test(input.start) || !HHMM.test(input.end)) return { ok: false, error: "Revisá las horas." }
+  const a = hmToMinutes(input.start)
+  const b = hmToMinutes(input.end)
+  if (b <= a) return { ok: false, error: "La hora de fin tiene que ser después de la de inicio." }
+  if (a < hmToMinutes(BRAND.openingHours.open) || b > hmToMinutes(BRAND.openingHours.close)) {
+    return { ok: false, error: `El local abre de ${BRAND.openingHours.open} a ${BRAND.openingHours.close}.` }
+  }
+
+  let weekday: number | null = null
+  let onDate: string | null = null
+  if (input.repeat === "weekly") {
+    weekday = Number(input.weekday)
+    if (!(BRAND.openingHours.days as readonly number[]).includes(weekday)) return { ok: false, error: "Elegí un día en que el local abre." }
+  } else {
+    if (!DAY.test(String(input.onDate))) return { ok: false, error: "Elegí la fecha." }
+    onDate = input.onDate!
+    if (!(BRAND.openingHours.days as readonly number[]).includes(new Date(`${onDate}T12:00:00Z`).getUTCDay())) return { ok: false, error: "Ese día el local está cerrado." }
+    if (onDate < dayKey(await now())) return { ok: false, error: "Esa fecha ya pasó." }
+  }
+
+  await store().saveFixedSlot({
+    id: input.id,
+    staffId: member.id,
+    weekday,
+    onDate,
+    start: input.start,
+    end: input.end,
+    label: String(input.label ?? "").trim().slice(0, 60) || null,
+    active: input.active ?? true,
+  })
+
+  // Turnos ya cargados que caen en ese horario (próximas 8 semanas, o el día puntual).
+  const n = await now()
+  const overlapping = s.appointments.filter((ap) => {
+    if (ap.staffId !== member.id || !(ap.status === "pendiente" || ap.status === "confirmado")) return false
+    if (new Date(ap.startsAt) < n || new Date(ap.startsAt).getTime() > n.getTime() + 56 * 86_400_000) return false
+    const day = dayKey(ap.startsAt)
+    if (weekday !== null ? new Date(`${day}T12:00:00Z`).getUTCDay() !== weekday : day !== onDate) return false
+    return minutesOfDay(ap.startsAt) < b && minutesOfDay(ap.endsAt) > a
+  }).length
+  refresh()
+  return { ok: true, overlapping }
+}
+
+export async function removeFixedSlot(id: string): Promise<Result> {
+  await assertPanelSession()
+  if (!(await db()).fixedSlots.some((f) => f.id === id)) return { ok: false, error: "No encontré ese turno fijo." }
+  await store().removeFixedSlot(id)
+  refresh()
+  return { ok: true }
+}
+
 export async function saveShopSettings(input: { openingCash: number }): Promise<Result> {
   await assertPanelSession()
   const openingCash = Math.round(Number(input.openingCash))
   if (!Number.isFinite(openingCash) || openingCash < 0 || openingCash > 10_000_000) return { ok: false, error: "Revisá el monto." }
   await store().updateShopSettings({ openingCash })
+  refresh()
+  return { ok: true }
+}
+
+/**
+ * Seña al reservar (Mercado Pago). Apagada por defecto: se prende cuando
+ * Virex confirme que la cobra y por cuánto. Con `enabled: true` hace falta
+ * `MERCADOPAGO_ACCESS_TOKEN` cargado — si no, avisa antes de prenderla, para
+ * no dejar a un cliente reservando algo que después no puede pagar.
+ */
+export async function saveDepositSettings(input: { enabled: boolean; amount: number; holdMin: number }): Promise<Result> {
+  await assertPanelSession()
+  const amount = Math.round(Number(input.amount))
+  const holdMin = Math.round(Number(input.holdMin))
+  if (input.enabled) {
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000_000) return { ok: false, error: "Poné un monto de seña mayor a $0." }
+    if (!Number.isFinite(holdMin) || holdMin < 5 || holdMin > 120) return { ok: false, error: "El tiempo para pagar va de 5 a 120 minutos." }
+    const { readMercadoPagoConfig } = await import("@/lib/mercadopago/config")
+    if (!readMercadoPagoConfig().configured) return { ok: false, error: "Falta cargar la clave de Mercado Pago en el servidor antes de activar la seña." }
+  }
+  await store().updateShopSettings({ depositEnabled: input.enabled, depositAmount: amount, depositHoldMin: holdMin || 15 })
   refresh()
   return { ok: true }
 }

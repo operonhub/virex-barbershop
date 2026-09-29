@@ -95,6 +95,7 @@ const toAppointment = (r: Row): Appointment => ({
   notes: (r.notes as string) ?? null,
   conversationId: (r.conversation_id as string) ?? null,
   createdAt: isoOr(r.created_at as Date),
+  holdExpiresAt: iso(r.hold_expires_at as Date | null),
 })
 
 const toPayment = (r: Row): Payment => ({
@@ -112,6 +113,9 @@ const toPayment = (r: Row): Payment => ({
   amount: Number(r.amount),
   method: r.method as Payment["method"],
   paidAt: isoOr(r.paid_at as Date),
+  externalRef: (r.external_ref as string) ?? null,
+  units: Number(r.units ?? 1),
+  imported: (r.imported as boolean) ?? false,
 })
 
 const toExpense = (r: Row): Expense => ({
@@ -121,6 +125,7 @@ const toExpense = (r: Row): Expense => ({
   amount: Number(r.amount),
   method: r.method as Expense["method"],
   paidAt: isoOr(r.paid_at as Date),
+  imported: (r.imported as boolean) ?? false,
 })
 
 const toConversation = (r: Row): Conversation => ({
@@ -177,6 +182,18 @@ function deriveAgentEvents(messages: Message[], conversations: Conversation[]): 
 
 const code = (e: unknown) => (e as { code?: string })?.code
 
+/**
+ * Reservas con seña que vencieron sin pagar: se cancelan solas, liberando la
+ * silla. Se corre en cada lectura y antes de crear un turno — no depende de
+ * que exista una tarea programada (Railway todavía no tiene una), así que
+ * el sistema queda correcto igual sin ella.
+ */
+async function sweepExpiredHolds(sql: postgres.Sql | postgres.TransactionSql) {
+  await sql`
+    update appointments set status = 'cancelado', notes = coalesce(notes || ' · ', '') || 'Vencida sin seña'
+    where status = 'pendiente' and hold_expires_at is not null and hold_expires_at < now()`
+}
+
 export const postgresStore: Store = {
   kind: "postgres",
 
@@ -186,7 +203,8 @@ export const postgresStore: Store = {
 
   async snapshot(): Promise<Snapshot> {
     const sql = sqlClient()
-    const [staff, services, clients, appointments, payments, expenses, conversations, messages, settings, shifts, timeOff, shop, closures] = await Promise.all([
+    await sweepExpiredHolds(sql)
+    const [staff, services, clients, appointments, payments, expenses, conversations, messages, settings, shifts, timeOff, shop, closures, fixed] = await Promise.all([
       sql`select s.*, coalesce(array_agg(e.service_id) filter (where e.service_id is not null), '{}') as skips
           from staff s left join staff_service_exclusions e on e.staff_id = s.id
           group by s.id order by s.id`,
@@ -203,6 +221,8 @@ export const postgresStore: Store = {
       sql`select * from shop_settings where id = 1`,
       sql`select to_char(business_day, 'YYYY-MM-DD') as day, opening_cash, expected_cash, counted_cash, closed_at, notes
           from cash_sessions where business_day > current_date - ${HISTORY_DAYS}::int and closed_at is not null order by business_day`,
+      sql`select id, staff_id, weekday, to_char(on_date, 'YYYY-MM-DD') as on_date, to_char(start_time, 'HH24:MI') as start, to_char(end_time, 'HH24:MI') as "end", label, active
+          from fixed_slots where on_date is null or on_date >= current_date - 1 order by weekday nulls last, on_date, start_time`,
     ])
     const convs = conversations.map(toConversation)
     const msgs = messages.map(toMessage)
@@ -237,6 +257,16 @@ export const postgresStore: Store = {
         endsAt: isoOr(x.ends_at as Date),
         reason: (x.reason as string) ?? null,
       })),
+      fixedSlots: fixed.map((x) => ({
+        id: x.id as string,
+        staffId: x.staff_id as string,
+        weekday: x.weekday === null ? null : Number(x.weekday),
+        onDate: (x.on_date as string) ?? null,
+        start: x.start as string,
+        end: x.end as string,
+        label: (x.label as string) ?? null,
+        active: x.active as boolean,
+      })),
       cashClosures: closures.map((c) => ({
         day: c.day as string,
         openingCash: Number(c.opening_cash),
@@ -252,6 +282,9 @@ export const postgresStore: Store = {
     const sql = sqlClient()
     try {
       return await sql.begin(async (tx) => {
+        // Antes de chocar contra la restricción EXCLUDE: una silla "tomada" por
+        // una seña vencida no debería frenar una reserva nueva.
+        await sweepExpiredHolds(tx)
         let clientId = appointment.clientId
         if (!clientId) {
           if (!newClient) throw new Error("Falta el cliente del turno.")
@@ -267,9 +300,9 @@ export const postgresStore: Store = {
           }
         }
         const [a] = await tx`
-          insert into appointments (client_id, staff_id, service_id, starts_at, ends_at, status, source, price, notes, conversation_id)
+          insert into appointments (client_id, staff_id, service_id, starts_at, ends_at, status, source, price, notes, conversation_id, hold_expires_at)
           values (${clientId}, ${appointment.staffId}, ${appointment.serviceId}, ${appointment.startsAt}, ${appointment.endsAt},
-                  ${appointment.status}, ${appointment.source}, ${appointment.price}, ${appointment.notes}, ${appointment.conversationId})
+                  ${appointment.status}, ${appointment.source}, ${appointment.price}, ${appointment.notes}, ${appointment.conversationId}, ${appointment.holdExpiresAt})
           returning id`
         return { appointmentId: a.id as string, clientId }
       })
@@ -301,15 +334,30 @@ export const postgresStore: Store = {
       await sql.begin(async (tx) => {
         await tx`
           insert into payments (appointment_id, client_id, staff_id, service_id, concept, kind, list_price, discount,
-                                discount_reason, tip, amount, method, paid_at)
+                                discount_reason, tip, amount, method, paid_at, external_ref)
           values (${appointmentId}, ${p.clientId}, ${p.staffId}, ${p.serviceId}, ${p.concept}, ${p.kind}, ${p.listPrice},
-                  ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt})`
+                  ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt}, ${p.externalRef ?? null})`
         await tx`update appointments set status = 'completado' where id = ${appointmentId}`
       })
     } catch (e) {
       if (code(e) === "23505") throw new AlreadyChargedError()
       throw e
     }
+  },
+
+  async confirmDeposit(appointmentId, p) {
+    const sql = sqlClient()
+    // Sin especificar el conflicto: cubre las dos reglas a la vez (un turno,
+    // una sola seña; un pago de MP, un solo registro).
+    const rows = await sql`
+      insert into payments (appointment_id, client_id, staff_id, service_id, concept, kind, list_price, discount,
+                            discount_reason, tip, amount, method, paid_at, external_ref)
+      values (${appointmentId}, ${p.clientId}, ${p.staffId}, ${p.serviceId}, ${p.concept}, 'sena', ${p.listPrice},
+              ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt}, ${p.externalRef ?? null})
+      on conflict do nothing
+      returning id`
+    if (rows.length) await sql`update appointments set status = 'confirmado' where id = ${appointmentId} and status = 'pendiente'`
+    return { inserted: rows.length > 0 }
   },
 
   async addExpense(e) {
@@ -416,6 +464,23 @@ export const postgresStore: Store = {
   async removeTimeOff(id) {
     const sql = sqlClient()
     await sql`delete from staff_time_off where id = ${id}`
+  },
+
+  async saveFixedSlot(slot) {
+    const sql = sqlClient()
+    if (slot.id) {
+      await sql`update fixed_slots set staff_id = ${slot.staffId}, weekday = ${slot.weekday}, on_date = ${slot.onDate},
+                start_time = ${slot.start}, end_time = ${slot.end}, label = ${slot.label}, active = ${slot.active} where id = ${slot.id}`
+      return slot.id
+    }
+    const [row] = await sql`insert into fixed_slots (staff_id, weekday, on_date, start_time, end_time, label, active)
+                            values (${slot.staffId}, ${slot.weekday}, ${slot.onDate}, ${slot.start}, ${slot.end}, ${slot.label}, ${slot.active}) returning id`
+    return row.id as string
+  },
+
+  async removeFixedSlot(id) {
+    const sql = sqlClient()
+    await sql`delete from fixed_slots where id = ${id}`
   },
 
   async updateShopSettings(patch) {

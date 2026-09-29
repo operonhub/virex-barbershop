@@ -1,6 +1,7 @@
 import "server-only"
 import { db, store } from "@/lib/data/repo"
 import { SlotTakenError } from "@/lib/data/store/types"
+import { startDepositCheckout } from "@/lib/mercadopago/deposit"
 import { freeSlots, freeSlotsAnyStaff, isOpen, worksOn } from "@/lib/domain/slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import { addDays, at, dayKey, formatDayLong, hm } from "@/lib/time"
@@ -218,9 +219,20 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       }
 
       const start = at(input.fecha, input.hora)
+      const deposit = s.shopSettings.depositEnabled ? { amount: s.shopSettings.depositAmount, holdMin: s.shopSettings.depositHoldMin } : null
       if (ctx.dryRun) {
         return {
-          result: { ok: true, ensayo: true, turno_id: "ensayo", dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name, precio: svc.price },
+          result: {
+            ok: true,
+            ensayo: true,
+            turno_id: "ensayo",
+            dia: formatDayLong(input.fecha),
+            hora: input.hora,
+            barbero: m.name,
+            servicio: svc.name,
+            precio: svc.price,
+            ...(deposit ? { sena_requerida: true, monto_sena: deposit.amount, link_de_pago: "https://ensayo.mercadopago.com/no-se-genera-en-el-ensayo" } : {}),
+          },
           action: "turno_creado",
         }
       }
@@ -233,12 +245,14 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
             serviceId: svc.id,
             startsAt: start.toISOString(),
             endsAt: new Date(start.getTime() + svc.durationMin * 60_000).toISOString(),
-            status: "confirmado",
+            // Con seña, el turno queda "pendiente" hasta que Mercado Pago confirme el pago (webhook).
+            status: deposit ? "pendiente" : "confirmado",
             source: "agente",
             price: svc.price,
             notes: null,
             conversationId: ctx.conversationId,
             createdAt: ctx.now.toISOString(),
+            holdExpiresAt: deposit ? new Date(ctx.now.getTime() + deposit.holdMin * 60_000).toISOString() : null,
           },
           newClient: ctx.clientId
             ? undefined
@@ -257,8 +271,34 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       }
       const id = created.appointmentId
       const clientId = created.clientId
+
+      if (!deposit) {
+        return {
+          result: { ok: true, turno_id: id, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name, precio: svc.price },
+          action: "turno_creado",
+          clientId,
+        }
+      }
+
+      const checkoutUrl = await startDepositCheckout({ appointmentId: id, serviceName: svc.name, amount: deposit.amount, holdMin: deposit.holdMin })
+      if (!checkoutUrl) {
+        await store().updateAppointment(id, { status: "cancelado", notes: "No se pudo generar el link de pago." })
+        return fail("No se pudo generar el link de pago en este momento. Derivá a una persona para que lo agende a mano.")
+      }
       return {
-        result: { ok: true, turno_id: id, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name, precio: svc.price },
+        result: {
+          ok: true,
+          turno_id: id,
+          dia: formatDayLong(input.fecha),
+          hora: input.hora,
+          barbero: m.name,
+          servicio: svc.name,
+          precio: svc.price,
+          sena_requerida: true,
+          monto_sena: deposit.amount,
+          minutos_para_pagar: deposit.holdMin,
+          link_de_pago: checkoutUrl,
+        },
         action: "turno_creado",
         clientId,
       }

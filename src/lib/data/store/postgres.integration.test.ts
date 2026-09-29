@@ -47,6 +47,7 @@ describe.skipIf(!url)("store de Postgres contra la base real", async () => {
     price: 15000,
     notes: `${TAG} test de integración`,
     conversationId: null,
+    holdExpiresAt: null,
   })
 
   beforeAll(async () => {

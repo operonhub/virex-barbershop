@@ -112,7 +112,7 @@ export async function respondToConversation(conversationId: string): Promise<{ o
     services: s.services,
     staff: s.staff,
     history,
-    systemPrompt: buildSystemPrompt(s.agentSettings, s.services, s.staff),
+    systemPrompt: buildSystemPrompt(s.agentSettings, s.services, s.staff, s.shopSettings),
     contextNote: await buildContextFor(conv, now),
     toolContext: { conversationId: conv.id, clientId: conv.clientId, participantName: conv.participantName, channel: conv.channel, now },
   })

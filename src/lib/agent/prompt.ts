@@ -1,6 +1,6 @@
 import { BRAND } from "@/config/brand"
 import { formatARS } from "@/lib/money"
-import type { AgentSettings, Service, Staff } from "@/lib/domain/types"
+import type { AgentSettings, Service, ShopSettings, Staff } from "@/lib/domain/types"
 
 /**
  * Prompt del agente.
@@ -20,7 +20,7 @@ const TONE: Record<AgentSettings["tone"], string> = {
   canchero: "Suelto y canchero, bien porteño, sin pasarse de confianza.",
 }
 
-export function buildSystemPrompt(settings: AgentSettings, services: Service[], staff: Staff[]): string {
+export function buildSystemPrompt(settings: AgentSettings, services: Service[], staff: Staff[], shop: ShopSettings): string {
   const days = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"]
   const open = BRAND.openingHours.days.map((d) => days[d]).join(", ")
 
@@ -72,6 +72,13 @@ Podés ${allowed.join(", ")}. Nada más. Para todo lo demás, derivá a una pers
 - Las fechas relativas ("mañana", "el sábado") se calculan con la fecha de hoy que figura en el contexto.
 - Si el día pedido está cerrado o sin lugar, ofrecé las opciones más cercanas.
 - Después de crear, reprogramar o cancelar un turno, confirmalo en una sola oración con día, hora y barbero.
+${
+  shop.depositEnabled
+    ? `
+# Seña
+Para reservar hay que pagar una seña de ${formatARS(shop.depositAmount)}. Cuando crear_turno devuelva "sena_requerida": true, pasale al cliente el link tal cual viene en "link_de_pago" y decile que tiene ${shop.depositHoldMin} minutos para pagar o el horario se libera solo. El turno queda reservado recién cuando llega el pago: no digas "listo" ni "te espero" hasta ese momento, decí que queda reservado apenas pague.`
+    : ""
+}
 
 # Reglas del dueño
 ${settings.rules.map((r) => `- ${r}`).join("\n")}
