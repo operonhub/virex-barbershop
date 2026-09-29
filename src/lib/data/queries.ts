@@ -52,7 +52,8 @@ export async function getHoy() {
   const active = appts.filter(ACTIVE)
   const paid = paymentsOnDay(s.payments, today)
   const money = summarizePayments(paid)
-  const paidIds = new Set(paid.map((p) => p.appointmentId))
+  // Sólo el cobro final cierra el turno: una seña no lo saca de "por cobrar".
+  const paidIds = new Set(paid.filter((p) => p.kind === "servicio").map((p) => p.appointmentId))
 
   const upcoming = active
     .filter((a) => new Date(a.startsAt) > n)

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { estimateCostUsd, readAgentConfig } from "../config"
 import { supportsEffort, supportsMidConversationSystem, toAnthropicTools, usesServerFallbacks } from "./anthropic"
-import { toGeminiTools } from "./gemini"
+import { ApiError } from "@google/genai"
+import { isTransientGeminiError, toGeminiTools } from "./gemini"
 import { fromFirstUser, withContext, type ToolSpec } from "./types"
 
 const TOOL: ToolSpec = {
@@ -36,6 +37,23 @@ describe("readAgentConfig", () => {
     expect(readAgentConfig({ AGENT_PROVIDER: "openai", GEMINI_API_KEY: "k" }).configured).toBe(false)
     expect(readAgentConfig({ GEMINI_API_KEY: "k", AGENT_EFFORT: "max" })).toMatchObject({ effort: null })
     expect(readAgentConfig({ GEMINI_API_KEY: "k", AGENT_EFFORT: "LOW" })).toMatchObject({ effort: "low" })
+  })
+})
+
+describe("qué errores de Gemini se reintentan", () => {
+  const api = (status: number) => new ApiError({ message: "x", status })
+
+  it("los pasajeros sí: límite de uso, fallas del servicio, red y demoras", () => {
+    for (const status of [408, 429, 500, 502, 503, 504]) expect(isTransientGeminiError(api(status))).toBe(true)
+    expect(isTransientGeminiError(new TypeError("fetch failed"))).toBe(true)
+    const timeout = new Error("t")
+    timeout.name = "TimeoutError"
+    expect(isTransientGeminiError(timeout)).toBe(true)
+  })
+
+  it("los definitivos no: pedido inválido, clave sin permiso, modelo inexistente", () => {
+    for (const status of [400, 401, 403, 404]) expect(isTransientGeminiError(api(status))).toBe(false)
+    expect(isTransientGeminiError(new Error("otra cosa"))).toBe(false)
   })
 })
 

@@ -168,6 +168,21 @@ viejas, tarea que recupera mensajes sin responder.
 
 ## Fase 4 · Mié 30: seña con Mercado Pago (1 día)
 
+**Estado 29/09:** ✅ Construida y probada (unit + integración contra la base real), **apagada por
+defecto**: se prende en Ajustes → Local cuando el dueño defina monto y cargue
+`MERCADOPAGO_ACCESS_TOKEN` y `MERCADOPAGO_WEBHOOK_SECRET`. Falta un pago de prueba con usuarios de
+MP y la tarea programada (hoy las reservas vencidas se liberan solas al leer el snapshot).
+
+**Estado 29/09 (extras, fuera del plan original):** ✅ **Turno rápido** en Hoy. ✅ **Turnos fijos**
+(Ajustes; migración 0005). ✅ **Historial del Excel** de la barbería cargado en Finanzas (0006,
+`scripts/importar-historial.mjs`). ✅ **Intervalo de horarios** 30/45/60 (0007). ✅ **Bandeja y
+pantallas operativas se refrescan solas** (`AutoRefresh`, sólo con la pestaña a la vista). ✅
+**Reintentos** ante tropiezos de Gemini y Zernio (`src/lib/retry.ts`, con presupuesto de tiempo;
+el envío reusa la clave de idempotencia). ✅ **Barrera de cuentas**: el panel ignora y nunca envía
+desde una cuenta de Zernio que no sea del profile de Virex (`ZERNIO_PROFILE_ID` obligatorio en
+producción; cada webhook en Zernio va filtrado por profile). Pendiente: cargar las tarjetas de
+fidelidad del Excel (hace falta un campo de sellos iniciales).
+
 1. En `/reservar`: el turno se crea `pendiente` con `hold_expires_at` a 15 minutos, se crea
    una preferencia de Checkout Pro y se redirige al pago. El pendiente ya bloquea el horario
    (está en los estados que `freeSlots` considera ocupados).

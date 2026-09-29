@@ -198,6 +198,24 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 - El sello "Hecho por Operon" (`components/brand/operon-badge.tsx`) va en el pie del panel y de
   la página pública. No sacarlo.
 
+## Varias cuentas de Zernio: no mezclar negocios
+
+La API key de Zernio ve las cuentas de TODOS los profiles del usuario (Operon tiene los suyos en el
+profile "Default"). Un webhook sin filtro dejó entrar el WhatsApp de otro negocio a la Bandeja.
+Reglas: cada webhook en Zernio se registra con `profileIds` (el de Virex, el de Operon CRM);
+`isOwnAccount` (`src/lib/zernio/own-accounts.ts`) hace que el webhook ignore y `deliverToChannel`
+se niegue a enviar desde una cuenta que no sea del `ZERNIO_PROFILE_ID`, y falla cerrado en
+producción si esa variable falta.
+
+## Pantallas que se actualizan solas y reintentos
+
+- `components/shell/auto-refresh.tsx` (en el layout del panel) hace `router.refresh()` cada 6 s en
+  Bandeja y cada 20 s en Hoy, Agenda y Caja, sólo con la pestaña visible. Ajustes, Finanzas y
+  Clientes no se refrescan (ahí se edita).
+- `lib/retry.ts` (`retrying`) reintenta con presupuesto de tiempo (el webhook tiene 60 s): Gemini
+  (`isTransientGeminiError`, 2 reintentos) y el envío por Zernio (`isTransientZernioFailure`, con la
+  MISMA `Idempotency-Key` en todos los intentos para no duplicar el mensaje).
+
 ## Conectar WhatsApp e Instagram (Fase 3)
 
 - **El dueño conecta sus propias cuentas, a distancia.** Desde Ajustes → Conexiones →

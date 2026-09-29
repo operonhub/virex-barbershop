@@ -71,7 +71,10 @@ describe.skipIf(!url)("store de Postgres contra la base real", async () => {
   it("lee el catálogo real", async () => {
     const snap = await store.snapshot()
     expect(snap.staff.map((s) => s.name)).toEqual(expect.arrayContaining(["Santiago", "Sebastián", "Nehemías"]))
-    expect(snap.services.map((s) => s.price)).toEqual(expect.arrayContaining([15000, 20000]))
+    // Los precios los edita el dueño en Ajustes: no se fijan valores, sólo que haya un catálogo válido.
+    expect(snap.services.length).toBeGreaterThan(0)
+    expect(snap.services.every((s) => s.price > 0 && s.durationMin > 0)).toBe(true)
+    expect(snap.shopSettings.slotStepMin).toBeGreaterThan(0)
     expect(snap.simulated).toBe(false)
   })
 
