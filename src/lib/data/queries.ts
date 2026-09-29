@@ -2,6 +2,7 @@ import "server-only"
 import { db, now } from "./repo"
 import { addDays, addMonths, dayKey, daysInMonth, monthKey } from "@/lib/time"
 import { isOpen, occupancy } from "@/lib/domain/slots"
+import { fixedSlotsOn, pendingFixedSlots } from "@/lib/domain/fixed-slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import {
   dailySeries,
@@ -86,6 +87,7 @@ export async function getHoy() {
     services: s.services,
     clients: s.clients,
     appointments: appts,
+    fixed: pendingFixedSlots(fixedSlotsOn(s.fixedSlots, today), appts),
     money,
     expected: active.reduce((sum, a) => sum + a.price, 0),
     doneCount: active.filter((a) => a.status === "completado").length,
@@ -142,7 +144,10 @@ export async function getAgenda(day: string) {
     services: s.services,
     clients: s.clients,
     appointments: s.appointments.filter((a) => dayKey(a.startsAt) === day),
-    paidAppointmentIds: s.payments.filter((p) => p.appointmentId).map((p) => p.appointmentId!),
+    // Turnos fijos de ese día que todavía no tienen un turno real encima.
+    fixed: pendingFixedSlots(fixedSlotsOn(s.fixedSlots, day), s.appointments.filter((a) => dayKey(a.startsAt) === day)),
+    // Sólo el cobro final marca un turno como pagado: una seña no.
+    paidAppointmentIds: s.payments.filter((p) => p.appointmentId && p.kind === "servicio").map((p) => p.appointmentId!),
     loyalty: Object.fromEntries(
       [...new Set(s.appointments.filter((a) => dayKey(a.startsAt) === day).map((a) => a.clientId))].map((id) => [
         id,

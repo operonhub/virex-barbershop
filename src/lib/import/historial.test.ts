@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { assignDays, categorizeExpense, excelDay, parseGastos, parseVentas } from "./historial"
+import { assignDays, categorizeExpense, excelDay, normalizePhone, parseGastos, parseTarjetas, parseVentas, titleCase } from "./historial"
 
 const H = [null, "CANTIDAD ", "EFECTIVO ", "TRANSF.", "TOTAL"]
 
@@ -83,6 +83,61 @@ describe("ventas por día", () => {
     expect(avisos.some((a) => a.includes("2026-07-22") && a.includes("total de la hoja"))).toBe(false)
     const roto = parseVentas([["MARTES 21/7", ...H.slice(1)], ["VIREX", 1, 10000, null, null], ["TOTAL", 1, 99999, null, null]], "2026-07-21")
     expect(roto.avisos.some((a) => a.includes("total de la hoja"))).toBe(true)
+  })
+})
+
+describe("tarjetas de fidelidad", () => {
+  const hoja = [
+    ["CLIENTE", "CANT. DE CORTES", "FECHAS", null, "CLIENTE", "CANT. DE CORTES", "FECHAS"],
+    ["DYLAN CABRERA", 1, 46093, null],
+    [null, null, null, null],
+    ["BRANDON SUAREZ", 3, 46094, 2],
+    [1124943921, null, null, null],
+    ["ARIEL BONANO", 1, 46094, null],
+    [1564056665, null, null, null], // formato viejo con 15
+    ["LEONARDO PEREZ", 2, "6/3, 13/3", null],
+    [1132647319, null, null, null],
+    ["DAMIAN FERNANDEZ", 2, 46094, 1], // sin teléfono
+    [null, null, null, null],
+    [1155555555, null, null, null], // un número suelto que no está pegado a ningún cliente
+  ]
+  const { tarjetas, avisos } = parseTarjetas(hoja)
+  const by = (n: string) => tarjetas.find((t) => t.name === n)!
+
+  it("lee nombre, cortes y fecha; saltea el encabezado", () => {
+    expect(tarjetas).toHaveLength(5)
+    expect(by("Dylan Cabrera")).toMatchObject({ cuts: 1, days: ["2026-03-12"] })
+  })
+
+  it("el teléfono de la fila de abajo es del cliente de arriba", () => {
+    expect(by("Brandon Suarez").phone).toBe("1124943921")
+    expect(by("Damian Fernandez").phone).toBeNull()
+    expect(by("Dylan Cabrera").phone).toBeNull()
+  })
+
+  it("un número suelto, sin cliente pegado arriba, no se le pega a nadie", () => {
+    expect(tarjetas.filter((t) => t.phone === "1155555555")).toHaveLength(0)
+  })
+
+  it("convierte el formato viejo con 15 a área 11", () => {
+    expect(by("Ariel Bonano").phone).toBe("1164056665")
+    expect(normalizePhone("11 2494-3921")).toBe("1124943921")
+    expect(normalizePhone("+54 9 11 2494 3921")).toBe("1124943921")
+    expect(normalizePhone("2494")).toBeNull()
+  })
+
+  it("un corte por fecha; si hay una sola fecha, todos los cortes van ese día", () => {
+    expect(by("Leonardo Perez").days).toEqual(["2026-03-06", "2026-03-13"])
+    expect(by("Brandon Suarez").days).toEqual(["2026-03-13", "2026-03-13", "2026-03-13"])
+  })
+
+  it("pone los nombres en formato de nombre propio, con tildes y eñes", () => {
+    expect(titleCase("SANTIAGO CAÑETE")).toBe("Santiago Cañete")
+    expect(titleCase("JUAN CRUZ ACUÑA")).toBe("Juan Cruz Acuña")
+  })
+
+  it("no avisa de nada raro en una hoja limpia", () => {
+    expect(avisos).toEqual([])
   })
 })
 

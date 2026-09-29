@@ -97,10 +97,14 @@ supabase/migrations/        0001 esquema + RLS + EXCLUDE · 0002 horarios por ba
                             config del local · 0003 endurecer (revisor de seguridad de Supabase) ·
                             0004 cierre de caja (uno por día, `business_day` único) ·
                             0005 turnos fijos (`fixed_slots`: semanales o de un día, bloquean
-                            `freeSlots` como un franco; `db()` los suma a `staff.timeOff`) ·
+                            `freeSlots` como un franco; `db()` los suma a `staff.timeOff`; se ven
+                            en la Agenda y en "La jornada" como bloques rayados hasta que un turno
+                            real los ocupa: `fixedSlotsOn` / `pendingFixedSlots`) ·
                             0006 historial importado del Excel (`payments.imported/units`,
                             `expenses.imported`; se carga con `scripts/importar-historial.mjs`,
-                            reglas en `src/lib/import/historial.ts`) · 0007 intervalo de horarios
+                            reglas en `src/lib/import/historial.ts`; las tarjetas de fidelidad de
+                            cartón se cargaron con `scripts/importar-tarjetas.mjs` como sellos de
+                            $0 marcados `imported`, porque la fidelidad se deriva de los cobros) · 0007 intervalo de horarios
                             (`shop_settings.slot_step_min`: 30, 45 o 60).
 supabase/seed.sql           Datos reales (barberos, servicios, horarios, reglas del agente). Idempotente.
 public/intro-boot.js        Decide antes del primer pintado si corre la intro.

@@ -130,6 +130,7 @@ export default async function HoyPage() {
             <DayTimeline
               staff={d.staff}
               appointments={d.appointments}
+              fixed={d.fixed}
               clients={d.clients}
               services={d.services}
               now={d.now}

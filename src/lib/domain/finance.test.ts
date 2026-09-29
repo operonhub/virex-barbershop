@@ -38,6 +38,12 @@ describe("historial importado del Excel: una fila representa varios cortes", () 
     expect(line.revenue).toBe(45000)
   })
 
+  it("un sello de la tarjeta de cartón ($0, importado) no cuenta como una venta del servicio", () => {
+    const sello = base({ id: "s1", appointmentId: null, listPrice: 0, amount: 0, units: 0, imported: true, concept: "Historial · tarjeta de fidelidad" })
+    expect(serviceBreakdown([sello], services)).toEqual([])
+    expect(serviceBreakdown([sello, base({})], services)[0].count).toBe(1)
+  })
+
   it("un cobro normal sigue valiendo un corte", () => {
     expect(summarizePayments([base({})]).avgTicket).toBe(20000)
   })

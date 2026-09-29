@@ -161,6 +161,87 @@ export function parseVentas(rows: Row[], startDay: string): LecturaVentas {
   return { ventas, avisos, dias: bloques.length }
 }
 
+/* ── Tarjetas de fidelidad ── */
+
+export interface TarjetaHistorica {
+  name: string
+  /** Teléfono de 10 dígitos (código de área + número), como se guardan en la base. */
+  phone: string | null
+  /** Cortes que llevaba en la tarjeta de cartón. */
+  cuts: number
+  /** Un día por corte (los que no tienen fecha propia usan la primera). */
+  days: string[]
+}
+
+export interface LecturaTarjetas {
+  tarjetas: TarjetaHistorica[]
+  avisos: string[]
+}
+
+/** "SANTIAGO CAÑETE" → "Santiago Cañete". */
+export function titleCase(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/(^|\s)(\p{L})/gu, (_, sp: string, ch: string) => sp + ch.toUpperCase())
+}
+
+/**
+ * Teléfono argentino → 10 dígitos (área + número), que es como están en la base.
+ * Acepta "11 2494 3921" y también el formato viejo con 15 ("15 6405 6665", que
+ * en el AMBA es 11 + los últimos 8). Lo que no cierra devuelve null.
+ */
+export function normalizePhone(value: unknown): string | null {
+  let d = String(value ?? "").replace(/\D/g, "")
+  if (d.startsWith("549")) d = d.slice(3)
+  else if (d.startsWith("54")) d = d.slice(2)
+  if (d.length === 10 && d.startsWith("15")) d = "11" + d.slice(2)
+  return d.length === 10 ? d : null
+}
+
+const YEAR = 2026
+
+/** "6/3, 13/3" → ["2026-03-06", "2026-03-13"]; un número de Excel → su fecha. */
+function parseFechas(value: unknown): string[] {
+  if (typeof value === "number" && value > 40_000) return [excelDay(value)]
+  if (typeof value !== "string") return []
+  return [...value.matchAll(/(\d{1,2})\/(\d{1,2})/g)].map((m) => `${YEAR}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`)
+}
+
+export function parseTarjetas(rows: Row[]): LecturaTarjetas {
+  const tarjetas: TarjetaHistorica[] = []
+  const avisos: string[] = []
+  let lastRow = -2
+  rows.forEach((r, i) => {
+    const a = r[0]
+    if (typeof a === "string" && a.trim() && clean(a) !== "CLIENTE") {
+      const cuts = Math.round(num(r[1]))
+      if (cuts < 1) {
+        avisos.push(`${titleCase(a)}: sin cantidad de cortes, no se cargó.`)
+        return
+      }
+      const fechas = parseFechas(r[2])
+      if (!fechas.length) {
+        avisos.push(`${titleCase(a)}: sin fecha de sus cortes, no se cargó.`)
+        return
+      }
+      if (fechas.length > 1 && fechas.length !== cuts) avisos.push(`${titleCase(a)}: ${cuts} cortes pero ${fechas.length} fechas (los que faltan usan la primera).`)
+      const days = Array.from({ length: cuts }, (_, k) => fechas[k] ?? fechas[0])
+      tarjetas.push({ name: titleCase(a), phone: null, cuts, days })
+      lastRow = i
+      return
+    }
+    // El teléfono está en la fila de abajo del cliente, sin nombre.
+    if ((typeof a === "number" || (typeof a === "string" && /^[\d\s+()-]+$/.test(a.trim()))) && lastRow === i - 1 && tarjetas.length) {
+      const phone = normalizePhone(a)
+      if (phone) tarjetas[tarjetas.length - 1].phone = phone
+      else avisos.push(`${tarjetas[tarjetas.length - 1].name}: el teléfono "${String(a)}" no tiene 10 dígitos (no se cargó).`)
+    }
+  })
+  return { tarjetas, avisos }
+}
+
 /* ── Gastos ── */
 
 const RE = {

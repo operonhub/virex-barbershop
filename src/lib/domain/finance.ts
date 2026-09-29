@@ -136,7 +136,8 @@ export function serviceBreakdown(payments: Payment[], services: Service[]) {
     .map((service) => {
       // La seña es un adelanto del mismo corte, no un corte aparte: contarla
       // duplicaría la venta cuando llega el cobro final.
-      const mine = payments.filter((p) => p.serviceId === service.id && p.kind !== "sena")
+      // Tampoco cuentan los sellos cargados de las tarjetas de cartón: son cobros de $0 que sólo existen para la fidelidad.
+      const mine = payments.filter((p) => p.serviceId === service.id && p.kind !== "sena" && !p.imported)
       return {
         service,
         count: mine.length,
