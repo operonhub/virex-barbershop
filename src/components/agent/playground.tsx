@@ -9,7 +9,7 @@ import type { AgentActionKind } from "@/lib/domain/types"
 
 type Line =
   | { role: "user"; text: string }
-  | { role: "assistant"; text: string; action: AgentActionKind | null; meta: string }
+  | { role: "assistant"; text: string; action: AgentActionKind | null; meta: string; dryRun: boolean }
   | { role: "error"; text: string }
 
 const STARTERS = ["Hola! tenés turno mañana a la tarde?", "cuánto sale corte y barba?", "me quiero cortar el sábado con Sebastián"]
@@ -24,7 +24,18 @@ function runMeta(res: { model: string; tokens: number; costUsd: number | null })
  * Chat de prueba con el agente real. Es la mejor demo posible para el dueño:
  * le escribe como si fuera un cliente y ve el turno aparecer en la agenda.
  */
-export function AgentPlayground({ agentName, configured, reason }: { agentName: string; configured: boolean; reason: string | null }) {
+export function AgentPlayground({
+  agentName,
+  configured,
+  reason,
+  rehearsal,
+}: {
+  agentName: string
+  configured: boolean
+  reason: string | null
+  /** Con la base real: consulta la agenda de verdad pero no guarda nada. */
+  rehearsal: boolean
+}) {
   const [lines, setLines] = useState<Line[]>([])
   const [draft, setDraft] = useState("")
   const [pending, startTransition] = useTransition()
@@ -47,7 +58,9 @@ export function AgentPlayground({ agentName, configured, reason }: { agentName: 
       const res = await testAgent(history)
       setLines((cur) => [
         ...cur,
-        res.ok ? { role: "assistant", text: res.reply, action: res.action, meta: runMeta(res) } : { role: "error", text: res.reason },
+        res.ok
+          ? { role: "assistant", text: res.reply, action: res.action, meta: runMeta(res), dryRun: res.dryRun }
+          : { role: "error", text: res.reason },
       ])
     })
   }
@@ -57,7 +70,11 @@ export function AgentPlayground({ agentName, configured, reason }: { agentName: 
       <header className="flex items-center justify-between border-b border-line px-5 py-3.5">
         <div>
           <h2 className="text-[13.5px] font-semibold text-ivory font-wide">Probalo</h2>
-          <p className="text-[12px] text-ivory-3">Escribile como si fueras un cliente. Usa la agenda real.</p>
+          <p className="text-[12px] text-ivory-3">
+            {rehearsal
+              ? "Escribile como un cliente. Mira la agenda real, pero es un ensayo: no guarda nada."
+              : "Escribile como si fueras un cliente. Agenda en la demo."}
+          </p>
         </div>
         {lines.length > 0 && (
           <Button variant="ghost" size="sm" onClick={() => setLines([])}>
@@ -115,7 +132,7 @@ export function AgentPlayground({ agentName, configured, reason }: { agentName: 
               </div>
               {l.role === "assistant" && l.action === "turno_creado" && (
                 <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-line-strong px-2.5 py-1 text-[11.5px] text-ivory-2">
-                  <CalendarCheck2 className="size-3.5" /> Turno creado en la agenda
+                  <CalendarCheck2 className="size-3.5" /> {l.dryRun ? "Se habría agendado (ensayo: no se guardó)" : "Turno creado en la agenda"}
                 </span>
               )}
               {l.role === "assistant" && <span className="mt-1 px-1 text-[10.5px] text-ivory-3 num">{l.meta}</span>}

@@ -20,11 +20,14 @@ Mantenerlo así.
 
 ## Estado actual
 
-- **Esqueleto funcional en modo demo:** todas las pantallas funcionan con datos de ejemplo
-  realistas generados en memoria (`src/lib/data/seed.ts`). No hay base conectada todavía.
+- **Conectado a Supabase** (proyecto `virex-barbershop`, us-east-1) cuando hay `DATABASE_URL`;
+  sin ella, en desarrollo, usa la demo en memoria (`src/lib/data/seed.ts`). La rama `demo`
+  (Vercel) es la vidriera de ventas con datos inventados.
 - **Datos reales (24/09):** mar–sáb de 11 a 20; barberos **Santiago, Sebastián y Nehemías**;
-  **Corte $15.000** y **Corte + barba $20.000**; todos los turnos duran **una hora** (el agente y
-  la web ofrecen horarios en punto: `BRAND.booking.slotStepMin`). Más la dirección y la tarjeta
+  **Corte $15.000** y **Corte + barba $20.000**; los turnos duran **una hora** (cada servicio tiene su
+  duración) y el agente y la web ofrecen horarios en punto. Ese intervalo (30, 45 o 60 min) se
+  cambia en Ajustes → Local (`shopSettings.slotStepMin`; `BRAND.booking.slotStepMin` es sólo el
+  valor por defecto). Más la dirección y la tarjeta
   de fidelidad (5 cortes → el 6to al 50 %).
 - Siguen siendo **supuestos**: quién es el dueño en el sistema (hoy Santiago) y las comisiones
   (50 %). Ver `docs/ROADMAP.md` → datos a pedir.
@@ -36,7 +39,8 @@ Mantenerlo así.
 npm install
 npm run dev          # http://localhost:3060
 npm test             # vitest: reglas de dominio (disponibilidad, fidelidad)
-npm run test:db      # corre la migración en Postgres real (PGlite) y prueba el anti doble turno
+npm run test:db      # corre las migraciones en Postgres real (PGlite): doble turno, doble cobro, seña
+npm run test:integration  # contra la base REAL (DATABASE_URL): crea datos "PRUEBA ·" y los borra
 npm run lint         # ESLint + React Compiler (los errores del compiler son errores reales)
 npx tsc --noEmit
 npm run build        # cortar `npm run dev` antes: el build pisa .next/ y el dev queda en 404
@@ -70,33 +74,86 @@ src/app/api/zernio/webhook/ Webhook de mensajes entrantes (firma HMAC, dedupe, a
 src/config/brand.ts         Datos del negocio. Todo lo que dice "Virex" sale de acá.
 src/lib/domain/             Reglas PURAS con tests: slots.ts (disponibilidad), loyalty.ts
                             (fidelidad), finance.ts (caja, comisiones, origen de turnos), types.ts.
-src/lib/data/repo.ts        Única puerta a los datos. Hoy: estado demo en memoria (globalThis).
+src/lib/data/repo.ts        Única puerta a los datos: `db()` (lee), `store()` (escribe), `now()`.
+src/lib/data/store/         La interfaz `Store` y sus dos implementaciones: memory.ts (demo) y
+                            postgres.ts (Supabase, con `postgres`). Los errores de la base se
+                            traducen: 23P01 → SlotTakenError, 23505 en cobros → AlreadyChargedError.
 src/lib/data/queries.ts     Una consulta por pantalla (arma exactamente lo que la página necesita).
-src/lib/data/actions.ts     Server actions (crear turno, cobrar, mensajes, modo IA/humano…).
+src/lib/data/actions.ts     Server actions (crear turno, cobrar, cobro rápido, cerrar caja, mensajes…).
+src/lib/data/settings-actions.ts  Ajustes: servicios, equipo, horario semanal, francos, fondo de caja.
+src/components/settings/    Editores de Ajustes (servicios, equipo con horario y francos, local).
 src/lib/agent/              config, prompt, tools (7 herramientas), run (loop), providers/ (Gemini, Claude),
                             respond (bandeja ↔ agente ↔ Zernio), handoff (red de seguridad), actions.
-src/lib/zernio/             Cliente de Zernio portado de operon-crm (probado en producción).
+src/lib/zernio/             Cliente de Zernio portado de operon-crm. deliver.ts: manda al canal
+                            correcto (ventana de 24 h de WhatsApp), lo usan el agente y la Bandeja.
+                            actions.ts: genera el link para que el DUEÑO conecte WhatsApp/Instagram.
+src/app/conectado/          Página pública (sin login) adonde vuelve el dueño tras conectar.
 src/lib/time.ts             Hora argentina (−03:00 fija, sin horario de verano). `dayKey` = AAAA-MM-DD.
 src/lib/money.ts            Pesos enteros (sin centavos), formatos es-AR.
 src/lib/chart-palette.ts    Paleta de datos para gráficos (validada para daltonismo).
 src/components/brand/       Isotipo (virex-mark), wordmark, intro, íconos de canal, sello Operon.
 src/components/ui/          Componentes shadcn (base-nova, Base UI). Tocar lo mínimo.
-supabase/migrations/        0001_core.sql: esquema completo + RLS + restricción EXCLUDE.
+supabase/migrations/        0001 esquema + RLS + EXCLUDE · 0002 horarios por barbero, francos, seña,
+                            config del local · 0003 endurecer (revisor de seguridad de Supabase) ·
+                            0004 cierre de caja (uno por día, `business_day` único) ·
+                            0005 turnos fijos (`fixed_slots`: semanales o de un día, bloquean
+                            `freeSlots` como un franco; `db()` los suma a `staff.timeOff`; se ven
+                            en la Agenda y en "La jornada" como bloques rayados hasta que un turno
+                            real los ocupa: `fixedSlotsOn` / `pendingFixedSlots`) ·
+                            0006 historial importado del Excel (`payments.imported/units`,
+                            `expenses.imported`; se carga con `scripts/importar-historial.mjs`,
+                            reglas en `src/lib/import/historial.ts`; las tarjetas de fidelidad de
+                            cartón se cargaron con `scripts/importar-tarjetas.mjs` como sellos de
+                            $0 marcados `imported`, porque la fidelidad se deriva de los cobros) · 0007 intervalo de horarios
+                            (`shop_settings.slot_step_min`: 30, 45 o 60).
+supabase/seed.sql           Datos reales (barberos, servicios, horarios, reglas del agente). Idempotente.
 public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 ```
+
+## Acceso al panel (login simple)
+
+- Una contraseña para todo el equipo: `PANEL_PASSWORD` (`src/lib/auth/session.ts`). La cookie
+  guarda una firma derivada de la contraseña, no la contraseña; cambiarla cierra todas las
+  sesiones. En producción, sin `PANEL_PASSWORD`, el panel queda **cerrado**; en desarrollo,
+  abierto.
+- `src/proxy.ts` (el middleware de Next 16) manda a `/login` todo menos `/reservar`, `/api/*`,
+  `/login` y los estáticos. **Además cada server action del panel llama a
+  `assertPanelSession()`**: una server action se puede invocar por POST desde otra ruta, así que
+  el proxy solo no alcanza. Toda action nueva del panel tiene que empezar con esa línea.
+- La reserva pública usa su propia action, `createPublicBooking` (sin sesión, acepta menos:
+  cliente nuevo, origen web, grilla del local). No reutilizar `createAppointment` ahí.
+- Se reemplaza por usuarios de Supabase Auth en la Fase 2.
+
+## Cobro rápido (turnos sin WhatsApp)
+
+- **Regla de oro para el equipo:** todo corte se registra en el panel, hable o no por WhatsApp.
+  Lo que no está cargado, el agente lo puede ofrecer como libre (doble turno de hecho) y no
+  suma a la comisión, la fidelidad ni la caja del barbero.
+- `quickCharge` (`src/lib/data/actions.ts`) crea el turno YA completado (`source: "walk_in"`) y
+  lo cobra en un solo paso — pantalla en `src/components/caja/quick-charge-dialog.tsx`, botón
+  "Cobro rápido" en Caja. Mismas reglas que un turno normal: fidelidad recalculada por el
+  servidor, `SlotTakenError` si ese barbero ya tiene algo agendado justo en ese momento.
 
 ## Reglas de negocio que no se rompen
 
 - **Un solo cálculo de horarios libres:** `freeSlots` / `freeSlotsAnyStaff` en
   `lib/domain/slots.ts`. Lo usan el agente, el diálogo de nuevo turno y la reserva web. No
-  duplicar esa lógica en ningún componente.
+  duplicar esa lógica en ningún componente. Respeta el **horario propio de cada barbero**
+  (`staff.schedule`, tabla `staff_schedules`; sin horario = el del local) y sus **francos**
+  (`staff.timeOff`). `worksOn()` dice si atiende ese día.
+- **Chat de prueba del agente en ensayo** con la base real (`ToolContext.dryRun`): corre todas
+  las validaciones y no escribe nada. En la demo en memoria sí agenda.
 - **El doble turno lo frena la base**, no sólo la app: `appointments_no_overlap` (EXCLUDE sobre
   `tstzrange(starts_at, ends_at, '[)')` por barbero; cancelados y no-show liberan la silla).
 - **La fidelidad se deriva de los pagos**, no se guarda un contador. El descuento lo recalcula
   el servidor al cobrar (`chargeAppointment`), nunca lo decide la pantalla.
-- **"Ahora" es el reloj de la demo:** usar `now()` de `repo.ts` y pasar `now` a los
-  componentes; no usar `new Date()` para cuentas relativas al presente. Con el local cerrado,
-  la demo simula el último día hábil a las 16:40 (`demoClock`); `DEMO_CLOCK=real` lo apaga.
+- **"Ahora" sale de `now()` de `repo.ts`:** con la base es la hora real; en la demo, con el
+  local cerrado, simula el último día hábil a las 16:40 (`demoClock`). No usar `new Date()` para
+  cuentas relativas al presente.
+- **Leer con `db()`, escribir con `store()`**, nunca mutar el snapshot. El snapshot de Postgres
+  trae 400 días de turnos/cobros/gastos y 90 de mensajes (suficiente para fidelidad y finanzas).
+- **Migraciones:** archivo nuevo en `supabase/migrations/`, probado con `npm run test:db`, y
+  aplicado en Supabase. Nunca editar una migración ya aplicada.
 - Si cambiás el generador de datos (`seed.ts`), subí `SEED_VERSION` o el estado en memoria no
   se regenera hasta el día siguiente.
 
@@ -144,6 +201,42 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
 - Tailwind v4 ya no pone la manito en los botones: está restituido en `globals.css`.
 - El sello "Hecho por Operon" (`components/brand/operon-badge.tsx`) va en el pie del panel y de
   la página pública. No sacarlo.
+
+## Varias cuentas de Zernio: no mezclar negocios
+
+La API key de Zernio ve las cuentas de TODOS los profiles del usuario (Operon tiene los suyos en el
+profile "Default"). Un webhook sin filtro dejó entrar el WhatsApp de otro negocio a la Bandeja.
+Reglas: cada webhook en Zernio se registra con `profileIds` (el de Virex, el de Operon CRM);
+`isOwnAccount` (`src/lib/zernio/own-accounts.ts`) hace que el webhook ignore y `deliverToChannel`
+se niegue a enviar desde una cuenta que no sea del `ZERNIO_PROFILE_ID`, y falla cerrado en
+producción si esa variable falta.
+
+## Pantallas que se actualizan solas y reintentos
+
+- `components/shell/auto-refresh.tsx` (en el layout del panel) hace `router.refresh()` cada 6 s en
+  Bandeja y cada 20 s en Hoy, Agenda y Caja, sólo con la pestaña visible. Ajustes, Finanzas y
+  Clientes no se refrescan (ahí se edita).
+- `lib/retry.ts` (`retrying`) reintenta con presupuesto de tiempo (el webhook tiene 60 s): Gemini
+  (`isTransientGeminiError`, 2 reintentos) y el envío por Zernio (`isTransientZernioFailure`, con la
+  MISMA `Idempotency-Key` en todos los intentos para no duplicar el mensaje).
+
+## Conectar WhatsApp e Instagram (Fase 3)
+
+- **El dueño conecta sus propias cuentas, a distancia.** Desde Ajustes → Conexiones →
+  "Generar link" (`createConnectLink` en `src/lib/zernio/actions.ts`), se copia el link y se le
+  manda por WhatsApp o mail. Él lo abre en SUS dispositivos — nunca pasa contraseñas ni códigos.
+- WhatsApp necesita **WhatsApp Business** (no personal) en una cuenta de **Meta Business**. Sin
+  `onboarding=api` en la URL de conexión, ofrece "Coexistence": sigue usando la app en el
+  celular y sólo escanea un QR — conviene abrir el link en una compu y escanear con el celular
+  del local.
+- Cada **profile de Zernio admite un solo WhatsApp** (`ZERNIO_PROFILE_ID`): Virex tiene el suyo.
+- Vuelve a `/conectado` (pública, sin datos sensibles: sólo dice si salió bien).
+- **Los ecos de lo que manda el panel se descartan** en `ingestInboxEvent` (mismo texto, mismo
+  autor, últimos 5 min): si no, un mensaje del agente o de una persona se duplicaría al volver
+  por el webhook.
+- Un mensaje **saliente que NO es un eco** es el dueño respondiendo desde el celular
+  (Coexistence): la conversación pasa a modo humano, para que el agente no le siga escribiendo
+  encima.
 
 ## Próximos pasos: **`docs/ROADMAP.md`**
 

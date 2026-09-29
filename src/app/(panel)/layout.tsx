@@ -2,6 +2,7 @@ import { IntroOverlay } from "@/components/brand/intro"
 import { Sidebar } from "@/components/shell/sidebar"
 import { Topbar } from "@/components/shell/topbar"
 import { MobileNav } from "@/components/shell/mobile-nav"
+import { AutoRefresh } from "@/components/shell/auto-refresh"
 import { NewAppointmentProvider } from "@/components/agenda/new-appointment"
 import { getShell } from "@/lib/data/queries"
 import { db } from "@/lib/data/repo"
@@ -24,9 +25,11 @@ export default async function PanelLayout({ children }: LayoutProps<"/">) {
           return d >= today && d <= horizon
         }),
         now: shell.now,
+        slotStepMin: s.shopSettings.slotStepMin,
       }}
     >
       <IntroOverlay />
+      <AutoRefresh />
       <div className="flex min-h-dvh">
         <Sidebar info={shell} />
         <div className="flex min-w-0 flex-1 flex-col">

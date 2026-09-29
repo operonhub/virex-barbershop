@@ -38,6 +38,8 @@ export interface BookingCatalog {
   /** Turnos de los próximos días, para calcular huecos sin ir al servidor. */
   appointments: Appointment[]
   now: string
+  /** Cada cuántos minutos se ofrece un horario (Ajustes → Local). */
+  slotStepMin: number
 }
 
 export function NewAppointmentProvider({
@@ -109,7 +111,7 @@ function NewAppointmentForm({
       .slice(0, 5)
   }, [query, catalog.clients])
 
-  const slots = freeSlots({ day, service, staff, appointments: catalog.appointments, now, leadMin: 0 })
+  const slots = freeSlots({ day, service, staff, appointments: catalog.appointments, now, leadMin: 0, stepMin: catalog.slotStepMin })
   // Si el horario elegido deja de estar libre al cambiar servicio o barbero,
   // se descarta en vez de mandar al servidor algo que va a rebotar.
   const chosen = time && slots.includes(time) ? time : null

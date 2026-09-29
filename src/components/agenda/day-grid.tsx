@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
-import { Bot, Footprints, MessageCircle, Phone, Scissors, Sparkles, StickyNote } from "lucide-react"
+import { Bot, Footprints, MessageCircle, Phone, Pin, Scissors, Sparkles, StickyNote } from "lucide-react"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { BRAND } from "@/config/brand"
@@ -15,7 +15,7 @@ import { useNewAppointment } from "./new-appointment"
 import { SOURCE_LABEL, StatusPill } from "./status"
 import { ChargeDialog } from "@/components/caja/charge-dialog"
 import type { LoyaltyStatus } from "@/lib/domain/loyalty"
-import type { Appointment, AppointmentStatus, Client, Service, Staff } from "@/lib/domain/types"
+import type { Appointment, AppointmentStatus, Client, FixedSlot, Service, Staff } from "@/lib/domain/types"
 
 const PX_PER_MIN = 1.25
 
@@ -32,6 +32,7 @@ export function DayGrid({
   services,
   clients,
   appointments,
+  fixed,
   paidIds,
   loyalty,
 }: {
@@ -42,6 +43,8 @@ export function DayGrid({
   services: Service[]
   clients: Client[]
   appointments: Appointment[]
+  /** Turnos fijos del día que todavía no tienen un turno real encima. */
+  fixed: FixedSlot[]
   paidIds: string[]
   loyalty: Record<string, LoyaltyStatus>
 }) {
@@ -134,6 +137,31 @@ export function DayGrid({
                       style={{ top: (m + 30 - openMin) * PX_PER_MIN }}
                     />
                   ))}
+
+                  {/* Turnos fijos: el horario está reservado para alguien. Rayado, para no confundirlo con un turno. */}
+                  {fixed
+                    .filter((f) => f.staffId === s.id)
+                    .map((f) => {
+                      const start = hmToMinutes(f.start)
+                      const end = hmToMinutes(f.end)
+                      return (
+                        <Link
+                          key={f.id}
+                          href="/ajustes?tab=fijos"
+                          onClick={(e) => e.stopPropagation()}
+                          title={`Turno fijo${f.label ? ": " + f.label : ""}, de ${f.start} a ${f.end}. Se edita en Ajustes.`}
+                          className="absolute inset-x-1.5 overflow-hidden rounded-lg bg-surface-1 bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgb(255_255_255/0.035)_6px_12px)] px-2.5 py-1.5 ring-1 ring-line ring-inset transition-colors hover:ring-line-strong"
+                          style={{ top: (start - openMin) * PX_PER_MIN + 1, height: (end - start) * PX_PER_MIN - 2 }}
+                        >
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <Pin className="size-3 shrink-0 text-ivory-3" aria-hidden />
+                            <span className="num shrink-0 text-[11px] text-ivory-3">{f.start}</span>
+                            <span className="truncate text-[13px] font-medium text-ivory-2">{f.label ?? "Turno fijo"}</span>
+                          </span>
+                          <span className="block text-[11.5px] text-ivory-3">{f.weekday === null ? "Turno fijo · un solo día" : "Turno fijo · todas las semanas"}</span>
+                        </Link>
+                      )
+                    })}
 
                   {appointments
                     .filter((a) => a.staffId === s.id)

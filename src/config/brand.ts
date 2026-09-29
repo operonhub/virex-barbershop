@@ -27,8 +27,11 @@ export const BRAND = {
     close: "20:00",
   },
   /**
-   * Los turnos duran una hora: el agente y la reserva web ofrecen horarios
-   * en punto. Desde el panel se puede cargar a cualquier hora (walk-in).
+   * Valor por defecto de cada cuánto se ofrece un horario (una hora, en punto).
+   * El real es configurable en Ajustes → Local (`shopSettings.slotStepMin`: 30,
+   * 45 o 60) y es el que usan el agente, la reserva web y "Nuevo turno". La
+   * duración de cada turno es la del servicio. Desde el panel se puede cargar
+   * a cualquier hora (walk-in).
    */
   booking: {
     slotStepMin: 60,

@@ -47,9 +47,14 @@ export function summarizePayments(payments: Payment[]): MoneySummary {
     tips += p.tip
     discounts += p.discount
     if (p.kind === "producto") products += p.amount - p.tip
-    else {
+    else if (p.kind === "sena") {
+      // Plata real que entró (cuenta en la caja del día), pero no es un
+      // corte terminado: no suma al ticket promedio.
       services += p.amount - p.tip
-      serviceCount++
+    } else {
+      services += p.amount - p.tip
+      // Una fila del historial importado ya trae la cantidad de cortes del día.
+      serviceCount += p.units ?? 1
     }
   }
 
@@ -105,15 +110,20 @@ export interface StaffLine {
  * habitual en AR; se confirma con Virex). La comisión se calcula sobre lo
  * efectivamente cobrado, o sea DESPUÉS del descuento de fidelidad: el premio
  * lo financia la casa y el barbero por igual.
+ *
+ * Cuando el turno lleva seña, esa plata la cuenta el barbero también: la
+ * comisión sale de sumar la seña (kind "sena") más el resto cobrado en el
+ * local (kind "servicio"), aunque hayan entrado en días distintos.
  */
 export function staffBreakdown(payments: Payment[], staff: Staff[]): StaffLine[] {
   return staff.map((member) => {
-    const mine = payments.filter((p) => p.staffId === member.id && p.kind === "servicio")
+    const mine = payments.filter((p) => p.staffId === member.id && (p.kind === "servicio" || p.kind === "sena"))
+    const completed = mine.filter((p) => p.kind === "servicio")
     const revenue = mine.reduce((s, p) => s + p.amount - p.tip, 0)
     const tips = mine.reduce((s, p) => s + p.tip, 0)
     return {
       staff: member,
-      services: mine.length,
+      services: completed.reduce((n, p) => n + (p.units ?? 1), 0),
       revenue,
       tips,
       payout: Math.round((revenue * member.commissionPct) / 100) + tips,
@@ -124,7 +134,10 @@ export function staffBreakdown(payments: Payment[], staff: Staff[]): StaffLine[]
 export function serviceBreakdown(payments: Payment[], services: Service[]) {
   return services
     .map((service) => {
-      const mine = payments.filter((p) => p.serviceId === service.id)
+      // La seña es un adelanto del mismo corte, no un corte aparte: contarla
+      // duplicaría la venta cuando llega el cobro final.
+      // Tampoco cuentan los sellos cargados de las tarjetas de cartón: son cobros de $0 que sólo existen para la fidelidad.
+      const mine = payments.filter((p) => p.serviceId === service.id && p.kind !== "sena" && !p.imported)
       return {
         service,
         count: mine.length,
@@ -149,6 +162,7 @@ export function sourceBreakdown(payments: Payment[], appointments: Appointment[]
     walk_in: { count: 0, revenue: 0 },
   }
   for (const p of payments) {
+    if (p.kind === "sena") continue // adelanto del mismo turno: no es un corte aparte.
     const appt = p.appointmentId ? byId.get(p.appointmentId) : undefined
     if (!appt) continue
     out[appt.source].count++

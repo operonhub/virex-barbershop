@@ -7,8 +7,8 @@ const services: Service[] = [
   { id: "barba", name: "Barba", category: "barba", durationMin: 25, price: 8000, countsForLoyalty: false, active: true },
 ]
 let n = 0
-const pay = (serviceId: string, reward = false): Payment => ({
-  id: `p${++n}`, appointmentId: null, clientId: "c1", staffId: null, serviceId, concept: "", kind: "servicio",
+const pay = (serviceId: string, reward = false, kind: Payment["kind"] = "servicio"): Payment => ({
+  id: `p${++n}`, appointmentId: null, clientId: "c1", staffId: null, serviceId, concept: "", kind,
   listPrice: 0, discount: 0, discountReason: reward ? "fidelidad" : null, tip: 0, amount: 0, method: "efectivo",
   paidAt: new Date(Date.UTC(2026, 8, n)).toISOString(),
 })
@@ -32,5 +32,11 @@ describe("tarjeta de fidelidad (5 cortes → el 6to al 50%)", () => {
     const st = loyaltyStatus("c1", history, services)
     expect(st.stamps).toBe(1)
     expect(st.rewardsRedeemed).toBe(1)
+  })
+
+  it("una seña (Mercado Pago) no suma sello: el corte terminado suma una sola vez", () => {
+    // Turno con seña: llega el pago "sena" al reservar y después el "servicio" al cobrar el resto.
+    const st = loyaltyStatus("c1", [pay("corte", false, "sena"), pay("corte")], services)
+    expect(st.stamps).toBe(1)
   })
 })

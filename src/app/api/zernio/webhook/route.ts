@@ -2,6 +2,7 @@ import { after, NextResponse, type NextRequest } from "next/server"
 import { readZernioWebhookConfig } from "@/lib/zernio/config"
 import { normalizeInboxEvent } from "@/lib/zernio/events"
 import { readSignatureHeader, verifySignature } from "@/lib/zernio/signature"
+import { isOwnAccount } from "@/lib/zernio/own-accounts"
 import { ingestInboxEvent, respondToConversation } from "@/lib/agent/respond"
 
 /**
@@ -44,6 +45,14 @@ export async function POST(req: NextRequest) {
 
   const event = normalizeInboxEvent(payload)
   if (event.kind !== "inbox") return NextResponse.json({ ok: true, status: event.kind })
+
+  // Una API key de Zernio ve las cuentas de todos los negocios del usuario. Si
+  // el evento no es de la cuenta de ESTE panel, no se guarda ni se responde
+  // (y va 200: un reintento no lo va a cambiar).
+  if (!(await isOwnAccount(event.accountExternalId))) {
+    console.warn("[zernio] evento de otra cuenta, ignorado", { cuenta: event.accountExternalId.slice(-6) })
+    return NextResponse.json({ ok: true, status: "other_account" })
+  }
 
   try {
     const conversationId = await ingestInboxEvent(event)

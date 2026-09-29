@@ -1,5 +1,6 @@
 import "server-only"
 import { ApiError, FinishReason, GoogleGenAI, ThinkingLevel, type Content, type FunctionDeclaration } from "@google/genai"
+import { retrying } from "@/lib/retry"
 import { fromFirstUser, NO_USAGE, withContext, type AgentEffort, type ModelProvider, type ModelSession, type SessionInput, type ToolSpec } from "./types"
 
 /**
@@ -16,14 +17,30 @@ import { fromFirstUser, NO_USAGE, withContext, type AgentEffort, type ModelProvi
 let client: GoogleGenAI | null = null
 /**
  * Por defecto el SDK reintenta 5 veces con esperas de hasta 60 s: en una
- * prueba, una respuesta tardó 86 s. En WhatsApp eso es un cliente colgado,
- * así que se corta antes y la conversación pasa a una persona.
+ * prueba, una respuesta tardó 86 s. En WhatsApp eso es un cliente colgado.
+ * Por eso el SDK no reintenta (`attempts: 1`) y los reintentos los maneja
+ * `generate()` con un presupuesto de tiempo: un tropiezo pasajero (límite de
+ * uso, error 5xx, corte de red) se reintenta un par de veces antes de derivar
+ * la conversación a una persona.
  */
 const gemini = () =>
   (client ??= new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY,
-    httpOptions: { timeout: 20_000, retryOptions: { attempts: 2, initialDelay: 1, maxDelay: 3 } },
+    httpOptions: { timeout: 20_000, retryOptions: { attempts: 1 } },
   }))
+
+/** Esperas entre reintentos y tiempo máximo (el webhook tiene 60 s en total). */
+const RETRY = { delaysMs: [1_500, 3_500], budgetMs: 40_000 }
+
+/** Errores que suelen pasar solos: límite de uso, fallas del servicio, red y demoras. */
+export function isTransientGeminiError(error: unknown): boolean {
+  if (error instanceof ApiError) return error.status === 408 || error.status === 429 || error.status >= 500
+  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) return true
+  return error instanceof TypeError // fetch sin conexión
+}
+
+const generate = (params: Parameters<GoogleGenAI["models"]["generateContent"]>[0]) =>
+  retrying(() => gemini().models.generateContent(params), (o) => o.failed && isTransientGeminiError(o.error), RETRY)
 
 /** Los modelos 3.x regulan el razonamiento por nivel; los 2.5, por presupuesto (se deja el default). */
 const THINKING: Record<AgentEffort, ThinkingLevel> = {
@@ -64,7 +81,7 @@ export const geminiProvider: ModelProvider = {
 
         let response
         try {
-          response = await gemini().models.generateContent({
+          response = await generate({
             model: input.model,
             contents,
             config: {

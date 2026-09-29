@@ -3,6 +3,7 @@ import { ArrowRight, Hand, Phone, Sparkles } from "lucide-react"
 import { PageBody, PageHeader, Panel } from "@/components/shell/page-header"
 import { DayTimeline } from "@/components/hoy/day-timeline"
 import { AgentLiveCard } from "@/components/hoy/agent-live-card"
+import { QuickAppointmentButton } from "@/components/hoy/quick-appointment"
 import { NewAppointmentButton } from "@/components/agenda/new-appointment-button"
 import { StatusPill } from "@/components/agenda/status"
 import { ChannelDot } from "@/components/brand/channel-icons"
@@ -82,6 +83,7 @@ export default async function HoyPage() {
             <Link href="/agenda" className={cn(buttonVariants({ variant: "outline", size: "lg" }), "h-10 px-4")}>
               Ver agenda
             </Link>
+            <QuickAppointmentButton staff={d.staff} services={d.services} clients={d.clients} />
             <NewAppointmentButton />
           </>
         }
@@ -128,6 +130,7 @@ export default async function HoyPage() {
             <DayTimeline
               staff={d.staff}
               appointments={d.appointments}
+              fixed={d.fixed}
               clients={d.clients}
               services={d.services}
               now={d.now}

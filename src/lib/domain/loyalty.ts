@@ -36,7 +36,9 @@ export function loyaltyStatus(
   let rewardsRedeemed = 0
 
   const history = payments
-    .filter((p) => p.clientId === clientId && p.serviceId && counts.has(p.serviceId))
+    // Sólo el cobro del corte terminado suma sello: una seña es un adelanto,
+    // no el corte en sí (si no, un turno con seña sellaría dos veces).
+    .filter((p) => p.clientId === clientId && p.kind === "servicio" && p.serviceId && counts.has(p.serviceId))
     .sort((a, b) => a.paidAt.localeCompare(b.paidAt))
 
   for (const p of history) {

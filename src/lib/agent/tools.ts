@@ -1,6 +1,8 @@
 import "server-only"
-import { db, newId } from "@/lib/data/repo"
-import { freeSlots, freeSlotsAnyStaff, isOpen } from "@/lib/domain/slots"
+import { db, store } from "@/lib/data/repo"
+import { SlotTakenError } from "@/lib/data/store/types"
+import { startDepositCheckout } from "@/lib/mercadopago/deposit"
+import { freeSlots, freeSlotsAnyStaff, isOpen, worksOn } from "@/lib/domain/slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import { addDays, at, dayKey, formatDayLong, hm } from "@/lib/time"
 import type { AgentActionKind, Channel, Service, Staff } from "@/lib/domain/types"
@@ -19,8 +21,8 @@ import { clientAgreedTo } from "./consent"
  *  3. Los resultados son JSON chico y en castellano: el modelo los lee para
  *     redactar la respuesta, así que tienen que decir qué pasó, no un código.
  *
- * Hoy operan sobre el estado demo (`db()`); con Supabase, las escrituras
- * pasan a la base y el doble turno lo frena la restricción EXCLUDE.
+ * Leen con `db()` y escriben con `store()`: en producción es Supabase, y el
+ * doble turno lo frena la restricción EXCLUDE aunque el chequeo de acá falle.
  */
 
 export interface ToolContext {
@@ -31,6 +33,12 @@ export interface ToolContext {
   now: Date
   /** La conversación hasta el último mensaje del cliente: para saber qué pidió o aceptó. */
   history?: TurnInput[]
+  /**
+   * Ensayo (el chat de prueba de /agente con la base real): todas las
+   * validaciones corren igual, pero nada se escribe. Así probar al agente no
+   * deja turnos falsos ocupando sillas de verdad.
+   */
+  dryRun?: boolean
 }
 
 export interface ToolOutcome {
@@ -156,7 +164,14 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         while (!isOpen(next)) next = addDays(next, 1)
         return { result: { ok: true, cerrado: true, dia: formatDayLong(input.fecha), proximo_dia_abierto: next } }
       }
-      const base = { day: input.fecha, service: svc, appointments: s.appointments, now: ctx.now }
+      const asked = input.barbero_id === "cualquiera" ? undefined : member(input.barbero_id)
+      if (asked && !worksOn(asked, input.fecha)) {
+        return {
+          result: { ok: true, dia: formatDayLong(input.fecha), barbero: asked.name, barbero_no_atiende_ese_dia: true, horarios: [] },
+          action: "consulta_respondida",
+        }
+      }
+      const base = { day: input.fecha, service: svc, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin }
       const slots =
         input.barbero_id === "cualquiera"
           ? freeSlotsAnyStaff({ ...base, staff: s.staff.filter((x) => x.active) }).map((x) => ({
@@ -198,49 +213,92 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       const m = member(input.barbero_id)
       if (!svc || !m || !validDay(input.fecha) || typeof input.hora !== "string") return fail("Datos del turno inválidos.")
       if (!clientAgreedTo(input.hora, ctx.history ?? [])) return fail(NOT_AGREED)
-      const free = freeSlots({ day: input.fecha, service: svc, staff: m, appointments: s.appointments, now: ctx.now })
+      const free = freeSlots({ day: input.fecha, service: svc, staff: m, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin })
       if (!free.includes(input.hora)) {
         return fail(`${m.name} ya no tiene libre ${input.hora} el ${formatDayLong(input.fecha)}. Volvé a consultar disponibilidad.`)
       }
 
-      let clientId = ctx.clientId
-      if (!clientId) {
-        const nombre = String(input.nombre_cliente || ctx.participantName).trim()
-        const tel = String(input.telefono || "").trim()
-        clientId = newId("cl")
-        s.clients.push({
-          id: clientId,
-          name: nombre,
-          phone: tel || null,
-          instagram: null,
-          channel: ctx.channel,
-          cutNotes: null,
-          notes: "Creado por el agente IA.",
-          preferredStaffId: m.id,
-          createdAt: ctx.now.toISOString(),
+      const start = at(input.fecha, input.hora)
+      const deposit = s.shopSettings.depositEnabled ? { amount: s.shopSettings.depositAmount, holdMin: s.shopSettings.depositHoldMin } : null
+      if (ctx.dryRun) {
+        return {
+          result: {
+            ok: true,
+            ensayo: true,
+            turno_id: "ensayo",
+            dia: formatDayLong(input.fecha),
+            hora: input.hora,
+            barbero: m.name,
+            servicio: svc.name,
+            precio: svc.price,
+            ...(deposit ? { sena_requerida: true, monto_sena: deposit.amount, link_de_pago: "https://ensayo.mercadopago.com/no-se-genera-en-el-ensayo" } : {}),
+          },
+          action: "turno_creado",
+        }
+      }
+      let created: { appointmentId: string; clientId: string }
+      try {
+        created = await store().createAppointment({
+          appointment: {
+            clientId: ctx.clientId ?? undefined,
+            staffId: m.id,
+            serviceId: svc.id,
+            startsAt: start.toISOString(),
+            endsAt: new Date(start.getTime() + svc.durationMin * 60_000).toISOString(),
+            // Con seña, el turno queda "pendiente" hasta que Mercado Pago confirme el pago (webhook).
+            status: deposit ? "pendiente" : "confirmado",
+            source: "agente",
+            price: svc.price,
+            notes: null,
+            conversationId: ctx.conversationId,
+            createdAt: ctx.now.toISOString(),
+            holdExpiresAt: deposit ? new Date(ctx.now.getTime() + deposit.holdMin * 60_000).toISOString() : null,
+          },
+          newClient: ctx.clientId
+            ? undefined
+            : {
+                name: String(input.nombre_cliente || ctx.participantName).trim().slice(0, 80),
+                phone: String(input.telefono || "").replace(/[^\d+]/g, "") || null,
+                channel: ctx.channel,
+                notes: "Creado por el agente IA.",
+                preferredStaffId: m.id,
+              },
+          linkConversationId: ctx.conversationId,
         })
-        const conv = s.conversations.find((c) => c.id === ctx.conversationId)
-        if (conv) conv.clientId = clientId
+      } catch (e) {
+        if (e instanceof SlotTakenError) return fail(`Ese horario se acaba de ocupar. Volvé a consultar disponibilidad.`)
+        throw e
+      }
+      const id = created.appointmentId
+      const clientId = created.clientId
+
+      if (!deposit) {
+        return {
+          result: { ok: true, turno_id: id, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name, precio: svc.price },
+          action: "turno_creado",
+          clientId,
+        }
       }
 
-      const start = at(input.fecha, input.hora)
-      const id = newId("tu")
-      s.appointments.push({
-        id,
-        clientId,
-        staffId: m.id,
-        serviceId: svc.id,
-        startsAt: start.toISOString(),
-        endsAt: new Date(start.getTime() + svc.durationMin * 60_000).toISOString(),
-        status: "confirmado",
-        source: "agente",
-        price: svc.price,
-        notes: null,
-        conversationId: ctx.conversationId,
-        createdAt: ctx.now.toISOString(),
-      })
+      const checkoutUrl = await startDepositCheckout({ appointmentId: id, serviceName: svc.name, amount: deposit.amount, holdMin: deposit.holdMin })
+      if (!checkoutUrl) {
+        await store().updateAppointment(id, { status: "cancelado", notes: "No se pudo generar el link de pago." })
+        return fail("No se pudo generar el link de pago en este momento. Derivá a una persona para que lo agende a mano.")
+      }
       return {
-        result: { ok: true, turno_id: id, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name, precio: svc.price },
+        result: {
+          ok: true,
+          turno_id: id,
+          dia: formatDayLong(input.fecha),
+          hora: input.hora,
+          barbero: m.name,
+          servicio: svc.name,
+          precio: svc.price,
+          sena_requerida: true,
+          monto_sena: deposit.amount,
+          minutos_para_pagar: deposit.holdMin,
+          link_de_pago: checkoutUrl,
+        },
         action: "turno_creado",
         clientId,
       }
@@ -270,13 +328,23 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       const svc = service(appt.serviceId)!
       const m = member(appt.staffId)!
       const others = s.appointments.filter((a) => a.id !== appt.id)
-      if (!freeSlots({ day: input.fecha, service: svc, staff: m, appointments: others, now: ctx.now }).includes(input.hora)) {
+      if (!freeSlots({ day: input.fecha, service: svc, staff: m, appointments: others, now: ctx.now, stepMin: s.shopSettings.slotStepMin }).includes(input.hora)) {
         return fail(`${m.name} no tiene libre ese horario. Consultá disponibilidad.`)
       }
       const start = at(input.fecha, input.hora)
-      appt.startsAt = start.toISOString()
-      appt.endsAt = new Date(start.getTime() + svc.durationMin * 60_000).toISOString()
-      appt.notes = `Reprogramado por el agente IA.`
+      if (ctx.dryRun) {
+        return { result: { ok: true, ensayo: true, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name }, action: "turno_reprogramado" }
+      }
+      try {
+        await store().updateAppointment(appt.id, {
+          startsAt: start.toISOString(),
+          endsAt: new Date(start.getTime() + svc.durationMin * 60_000).toISOString(),
+          notes: "Reprogramado por el agente IA.",
+        })
+      } catch (e) {
+        if (e instanceof SlotTakenError) return fail(`${m.name} ya no tiene libre ese horario. Consultá disponibilidad.`)
+        throw e
+      }
       return {
         result: { ok: true, dia: formatDayLong(input.fecha), hora: input.hora, barbero: m.name, servicio: svc.name },
         action: "turno_reprogramado",
@@ -287,8 +355,9 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       if (!perms.cancel) return fail("El dueño no habilitó cancelar. Derivá a una persona.")
       const appt = s.appointments.find((a) => a.id === input.turno_id)
       if (!appt || appt.clientId !== ctx.clientId) return fail("No encontré ese turno entre los del cliente.")
-      appt.status = "cancelado"
-      appt.notes = `Cancelado por el agente: ${String(input.motivo)}`
+      if (!ctx.dryRun) {
+        await store().updateAppointment(appt.id, { status: "cancelado", notes: `Cancelado por el agente: ${String(input.motivo).slice(0, 200)}` })
+      }
       return { result: { ok: true, cancelado: true }, action: "turno_cancelado" }
     }
 
@@ -303,11 +372,8 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
     }
 
     case "derivar_a_humano": {
-      const conv = s.conversations.find((c) => c.id === ctx.conversationId)
-      if (conv) {
-        conv.mode = "humano"
-        conv.needsHuman = true
-        conv.handoffReason = String(input.motivo).slice(0, 120)
+      if (ctx.conversationId && !ctx.dryRun) {
+        await store().updateConversation(ctx.conversationId, { mode: "humano", needsHuman: true, handoffReason: String(input.motivo).slice(0, 120) })
       }
       return { result: { ok: true, derivado: true }, action: "derivado_humano" }
     }

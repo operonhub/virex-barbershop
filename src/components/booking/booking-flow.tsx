@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react"
 import { ArrowLeft, Check, Clock3, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { WhatsAppIcon } from "@/components/brand/channel-icons"
-import { createAppointment } from "@/lib/data/actions"
+import { createPublicBooking } from "@/lib/data/actions"
 import { freeSlots, freeSlotsAnyStaff, isOpen } from "@/lib/domain/slots"
 import { addDays, dayKey, formatDayLong, WEEKDAY_SHORT, weekday } from "@/lib/time"
 import { formatARS } from "@/lib/money"
@@ -23,11 +23,17 @@ export function BookingFlow({
   staff,
   busy,
   now,
+  deposit,
+  stepMin,
 }: {
   services: Service[]
   staff: Staff[]
   busy: Appointment[]
   now: string
+  /** Cada cuántos minutos se ofrece un horario (Ajustes → Local). */
+  stepMin: number
+  /** Si Virex cobra seña al reservar (Ajustes → Local). `null` = no cobra. */
+  deposit: { amount: number; holdMin: number } | null
 }) {
   const today = dayKey(now)
   const days = useMemo(() => {
@@ -55,11 +61,11 @@ export function BookingFlow({
 
   const slots = useMemo(() => {
     if (!service) return []
-    const base = { day, service, appointments: busy, now: new Date(now) }
+    const base = { day, service, appointments: busy, now: new Date(now), stepMin }
     if (staffId === "cualquiera") return freeSlotsAnyStaff({ ...base, staff: available })
     const m = available.find((s) => s.id === staffId)
     return m ? freeSlots({ ...base, staff: m }).map((time) => ({ time, staffId: m.id })) : []
-  }, [service, day, staffId, busy, now, available])
+  }, [service, day, staffId, busy, now, available, stepMin])
 
   const staffName = (id: string) => staff.find((s) => s.id === id)?.name
 
@@ -67,15 +73,9 @@ export function BookingFlow({
     if (!service || !slot) return
     setError(null)
     startTransition(async () => {
-      const res = await createAppointment({
-        day,
-        time: slot.time,
-        staffId: slot.staffId,
-        serviceId: service.id,
-        newClient: { name, phone },
-        source: "web",
-      })
+      const res = await createPublicBooking({ day, time: slot.time, staffId: slot.staffId, serviceId: service.id, name, phone })
       if (!res.ok) setError(res.error)
+      else if (res.data?.checkoutUrl) window.location.href = res.data.checkoutUrl
       else setStep("listo")
     })
   }
@@ -227,6 +227,12 @@ export function BookingFlow({
               className="num h-12 w-full rounded-xl border border-line-strong bg-surface-1 px-4 text-[15px] text-ivory placeholder:text-ivory-3 focus:border-gold/60 focus:outline-none"
             />
           </div>
+          {deposit && (
+            <p className="rounded-xl bg-surface-2 px-4 py-3 text-[13px] text-ivory-2">
+              Para reservar hay que pagar una seña de <span className="num font-medium text-ivory">{formatARS(deposit.amount)}</span>. Tenés{" "}
+              {deposit.holdMin} minutos: si no llega el pago, el horario se libera solo.
+            </p>
+          )}
           {error && <p className="text-[13.5px] text-danger">{error}</p>}
           <Button
             size="lg"
@@ -234,7 +240,7 @@ export function BookingFlow({
             disabled={name.trim().length < 3 || phone.replace(/\D/g, "").length < 8 || pending}
             onClick={confirm}
           >
-            Confirmar turno
+            {pending ? "Un momento…" : deposit ? `Pagar la seña de ${formatARS(deposit.amount)}` : "Confirmar turno"}
           </Button>
         </section>
       )}

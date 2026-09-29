@@ -32,6 +32,73 @@ export interface Staff {
   active: boolean
   /** Servicios que NO hace (ej. color). Vacío = hace todos. */
   skipsServiceIds: string[]
+  /**
+   * Horario propio por día de la semana. `undefined` = sigue el horario del
+   * local (la demo). Con la base, un día sin franjas = ese día no trabaja.
+   */
+  schedule?: WorkShift[]
+  /** Francos, vacaciones, turnos médicos: rangos en que no atiende. Sin motivo (puede llegar a la web pública). */
+  timeOff?: { startsAt: string; endsAt: string }[]
+}
+
+/** Configuración del local editable desde Ajustes (tabla `shop_settings`). */
+export interface ShopSettings {
+  /** Efectivo con el que abre la caja cada día. */
+  openingCash: number
+  depositEnabled: boolean
+  depositAmount: number
+  depositHoldMin: number
+  remindersEnabled: boolean
+  /** Cada cuántos minutos se ofrece un horario (30, 45 o 60). La duración de cada turno es la del servicio. */
+  slotStepMin: number
+}
+
+/** Cierre de caja de un día (uno por día; corregir lo actualiza). */
+export interface CashClosure {
+  /** AAAA-MM-DD, hora argentina. */
+  day: string
+  openingCash: number
+  expectedCash: number
+  countedCash: number
+  closedAt: string
+  notes: string | null
+}
+
+/** Franco, vacaciones o bloqueo, con el motivo (sólo para el panel). */
+export interface TimeOffEntry {
+  id: string
+  staffId: string
+  startsAt: string
+  endsAt: string
+  reason: string | null
+}
+
+/**
+ * Turno fijo: un horario reservado de forma permanente (todas las semanas) o
+ * un día puntual. Bloquea la silla como un franco, sin ser un turno (no tiene
+ * cliente ni cobro). Es semanal si tiene `weekday`, de un día si tiene `onDate`.
+ */
+export interface FixedSlot {
+  id: string
+  staffId: string
+  /** 0 = domingo … 6 = sábado. Sólo en los semanales. */
+  weekday: number | null
+  /** AAAA-MM-DD. Sólo en los de un día. */
+  onDate: string | null
+  /** "HH:MM" */
+  start: string
+  end: string
+  /** Para el equipo ("Juan, corte y barba"). El agente no lo ve. */
+  label: string | null
+  active: boolean
+}
+
+export interface WorkShift {
+  /** 0 = domingo … 6 = sábado. */
+  weekday: number
+  /** "HH:MM" */
+  start: string
+  end: string
 }
 
 export type ServiceCategory = "corte" | "barba" | "combo" | "color" | "extra"
@@ -75,6 +142,12 @@ export interface Appointment {
   notes: string | null
   conversationId: string | null
   createdAt: string
+  /**
+   * Vencimiento de la seña reservada (Mercado Pago). Sólo en turnos
+   * "pendiente" creados con seña: pasado este momento sin pagar, se cancela
+   * solo (la base libera la silla). `null` en cualquier otro turno.
+   */
+  holdExpiresAt: string | null
 }
 
 export type DiscountReason = "fidelidad" | "manual"
@@ -87,7 +160,8 @@ export interface Payment {
   serviceId: string | null
   /** Qué se cobró, en palabras: "Corte + barba", "Cera mate". */
   concept: string
-  kind: "servicio" | "producto"
+  /** "sena" = seña de Mercado Pago al reservar; se descuenta del cobro final. */
+  kind: "servicio" | "producto" | "sena"
   listPrice: number
   discount: number
   discountReason: DiscountReason | null
@@ -96,6 +170,12 @@ export interface Payment {
   amount: number
   method: PaymentMethod
   paidAt: string
+  /** Id del pago en Mercado Pago (dedupe del webhook). Sólo en pagos de "sena". */
+  externalRef?: string | null
+  /** Cuántos cortes representa. 1 en un cobro normal; en el historial importado del Excel, la cantidad del día. */
+  units?: number
+  /** true si viene del Excel de antes del panel (sin turno ni cliente detrás). */
+  imported?: boolean
 }
 
 export type ExpenseCategory =
@@ -113,6 +193,8 @@ export interface Expense {
   amount: number
   method: PaymentMethod
   paidAt: string
+  /** true si viene del Excel de antes del panel. */
+  imported?: boolean
 }
 
 /* ── Bandeja ── */
@@ -122,6 +204,10 @@ export type ConversationMode = "ia" | "humano"
 
 export interface Conversation {
   id: string
+  /** Id de la conversación en Zernio (para responder). En la demo coincide con `id`. */
+  externalId?: string | null
+  /** Cuenta de Zernio (el WhatsApp o el Instagram del local) por la que entró. */
+  accountExternalId?: string | null
   channel: Channel
   clientId: string | null
   participantName: string

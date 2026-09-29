@@ -51,6 +51,10 @@ export default async function CajaPage({ searchParams }: PageProps<"/caja">) {
         services={d.services}
         clients={d.clients}
         loyalty={d.loyalty}
+        depositByAppointment={d.depositByAppointment}
+        openingCash={d.openingCash}
+        day={d.day}
+        closure={d.closure}
       />
     </PageBody>
   )

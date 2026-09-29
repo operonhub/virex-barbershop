@@ -5,6 +5,7 @@ import { AgentPlayground } from "@/components/agent/playground"
 import { ChannelDot } from "@/components/brand/channel-icons"
 import { getAgente } from "@/lib/data/queries"
 import { readAgentConfig } from "@/lib/agent/config"
+import { store } from "@/lib/data/repo"
 import { formatARS, formatNumber } from "@/lib/money"
 import { timeAgo } from "@/lib/time"
 
@@ -34,7 +35,12 @@ export default async function AgentePage() {
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
         <AgentSettingsForm settings={d.settings} />
         <div className="space-y-5">
-          <AgentPlayground agentName={d.settings.name} configured={config.configured} reason={config.configured ? null : config.reason} />
+          <AgentPlayground
+            agentName={d.settings.name}
+            configured={config.configured}
+            reason={config.configured ? null : config.reason}
+            rehearsal={store().kind === "postgres"}
+          />
           <Panel title="Lo último que hizo" bodyClassName="px-0 pb-1">
             <ul>
               {d.events.map((e) => (

@@ -37,6 +37,7 @@ export function ChargeDialog({
   service,
   staff,
   loyalty,
+  depositPaid = 0,
   open,
   onOpenChange,
 }: {
@@ -45,6 +46,8 @@ export function ChargeDialog({
   service: Service
   staff: Staff | undefined
   loyalty: LoyaltyStatus | undefined
+  /** Seña ya pagada por Mercado Pago al reservar, si la hay. */
+  depositPaid?: number
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -55,7 +58,7 @@ export function ChargeDialog({
   const [pending, startTransition] = useTransition()
 
   const discount = useReward && rewardAvailable ? Math.round((service.price * BRAND.loyalty.rewardDiscountPct) / 100) : 0
-  const total = service.price - discount + tip
+  const total = Math.max(0, service.price - depositPaid - discount) + tip
   const stampsAfter = service.countsForLoyalty && !(useReward && rewardAvailable) ? Math.min((loyalty?.stamps ?? 0) + 1, BRAND.loyalty.stampsRequired) : 0
 
   function submit() {
@@ -157,6 +160,12 @@ export function ChargeDialog({
               <dt>{service.name}</dt>
               <dd className="num">{formatARS(service.price)}</dd>
             </div>
+            {depositPaid > 0 && (
+              <div className="flex justify-between text-gold">
+                <dt>Seña ya pagada</dt>
+                <dd className="num">−{formatARS(depositPaid)}</dd>
+              </div>
+            )}
             {discount > 0 && (
               <div className="flex justify-between text-gold">
                 <dt>Fidelidad −50%</dt>

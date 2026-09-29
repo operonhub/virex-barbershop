@@ -6,7 +6,7 @@ import { hm, hmToMinutes, minutesOfDay } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { STATUS_LABEL } from "@/components/agenda/status"
-import type { Appointment, Client, Service, Staff } from "@/lib/domain/types"
+import type { Appointment, Client, FixedSlot, Service, Staff } from "@/lib/domain/types"
 
 /**
  * "La jornada": un carril por barbero, de la apertura al cierre, con la línea
@@ -17,6 +17,7 @@ import type { Appointment, Client, Service, Staff } from "@/lib/domain/types"
 export function DayTimeline({
   staff,
   appointments,
+  fixed,
   clients,
   services,
   now,
@@ -24,6 +25,8 @@ export function DayTimeline({
 }: {
   staff: Staff[]
   appointments: Appointment[]
+  /** Turnos fijos de hoy que todavía no tienen un turno real encima. */
+  fixed: FixedSlot[]
   clients: Client[]
   services: Service[]
   now: string
@@ -76,6 +79,36 @@ export function DayTimeline({
                   {hours.slice(1, -1).map((m) => (
                     <span key={m} aria-hidden className="absolute inset-y-0 w-px bg-line" style={{ left: pos(m) }} />
                   ))}
+                  {/* Turnos fijos sin ocupar: rayados, el horario está reservado para alguien. */}
+                  {fixed
+                    .filter((f) => f.staffId === member.id)
+                    .map((f) => {
+                      const s = hmToMinutes(f.start)
+                      const e = hmToMinutes(f.end)
+                      return (
+                        <Tooltip key={f.id}>
+                          <TooltipTrigger
+                            render={
+                              <Link
+                                href="/ajustes?tab=fijos"
+                                aria-label={`Turno fijo ${f.start}${f.label ? " — " + f.label : ""}`}
+                                className="absolute inset-y-1 overflow-hidden rounded-md bg-[repeating-linear-gradient(135deg,transparent_0_5px,rgb(255_255_255/0.04)_5px_10px)] px-2 py-1 ring-1 ring-line ring-inset transition-colors hover:ring-line-strong"
+                                style={{ left: pos(s), width: `calc(${((e - s) / span) * 100}% - 2px)` }}
+                              />
+                            }
+                          >
+                            <span className="block truncate text-[11.5px] leading-tight font-medium text-ivory-2">{f.label ?? "Turno fijo"}</span>
+                            <span className="block truncate text-[10.5px] leading-tight text-ivory-3">fijo</span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <span className="num">
+                              {f.start}–{f.end}
+                            </span>{" "}
+                            · Turno fijo{f.label ? `: ${f.label}` : ""} · {f.weekday === null ? "un solo día" : "todas las semanas"}
+                          </TooltipContent>
+                        </Tooltip>
+                      )
+                    })}
                   {mine.map((a) => {
                     const s = minutesOfDay(a.startsAt)
                     const e = minutesOfDay(a.endsAt)

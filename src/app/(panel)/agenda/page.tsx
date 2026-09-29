@@ -96,6 +96,7 @@ export default async function AgendaPage({ searchParams }: PageProps<"/agenda">)
             services={d.services}
             clients={d.clients}
             appointments={d.appointments}
+            fixed={d.fixed}
             paidIds={d.paidAppointmentIds}
             loyalty={d.loyalty}
           />

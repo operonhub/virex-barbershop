@@ -2,6 +2,7 @@ import "server-only"
 import { db, now } from "./repo"
 import { addDays, addMonths, dayKey, daysInMonth, monthKey } from "@/lib/time"
 import { isOpen, occupancy } from "@/lib/domain/slots"
+import { fixedSlotsOn, pendingFixedSlots } from "@/lib/domain/fixed-slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
 import {
   dailySeries,
@@ -52,7 +53,8 @@ export async function getHoy() {
   const active = appts.filter(ACTIVE)
   const paid = paymentsOnDay(s.payments, today)
   const money = summarizePayments(paid)
-  const paidIds = new Set(paid.map((p) => p.appointmentId))
+  // Sólo el cobro final cierra el turno: una seña no lo saca de "por cobrar".
+  const paidIds = new Set(paid.filter((p) => p.kind === "servicio").map((p) => p.appointmentId))
 
   const upcoming = active
     .filter((a) => new Date(a.startsAt) > n)
@@ -85,6 +87,7 @@ export async function getHoy() {
     services: s.services,
     clients: s.clients,
     appointments: appts,
+    fixed: pendingFixedSlots(fixedSlotsOn(s.fixedSlots, today), appts),
     money,
     expected: active.reduce((sum, a) => sum + a.price, 0),
     doneCount: active.filter((a) => a.status === "completado").length,
@@ -141,7 +144,10 @@ export async function getAgenda(day: string) {
     services: s.services,
     clients: s.clients,
     appointments: s.appointments.filter((a) => dayKey(a.startsAt) === day),
-    paidAppointmentIds: s.payments.filter((p) => p.appointmentId).map((p) => p.appointmentId!),
+    // Turnos fijos de ese día que todavía no tienen un turno real encima.
+    fixed: pendingFixedSlots(fixedSlotsOn(s.fixedSlots, day), s.appointments.filter((a) => dayKey(a.startsAt) === day)),
+    // Sólo el cobro final marca un turno como pagado: una seña no.
+    paidAppointmentIds: s.payments.filter((p) => p.appointmentId && p.kind === "servicio").map((p) => p.appointmentId!),
     loyalty: Object.fromEntries(
       [...new Set(s.appointments.filter((a) => dayKey(a.startsAt) === day).map((a) => a.clientId))].map((id) => [
         id,
@@ -229,7 +235,8 @@ export async function getCaja(day: string) {
   const n = await now()
   const payments = paymentsOnDay(s.payments, day).sort((a, b) => b.paidAt.localeCompare(a.paidAt))
   const expenses = s.expenses.filter((e) => dayKey(e.paidAt) === day)
-  const paidIds = new Set(s.payments.map((p) => p.appointmentId))
+  // Sólo el cobro final cierra el turno: una seña (kind "sena") no lo saca de "Por cobrar".
+  const paidIds = new Set(s.payments.filter((p) => p.kind === "servicio").map((p) => p.appointmentId))
   const pending = s.appointments.filter(
     (a) =>
       dayKey(a.startsAt) === day &&
@@ -244,12 +251,18 @@ export async function getCaja(day: string) {
     expenses,
     money: summarizePayments(payments),
     staffLines: staffBreakdown(payments, s.staff),
+    // Un día ya cerrado conserva el fondo con el que se cerró.
+    openingCash: s.cashClosures.find((c) => c.day === day)?.openingCash ?? s.shopSettings.openingCash,
+    closure: s.cashClosures.find((c) => c.day === day) ?? null,
     pending,
     staff: s.staff,
     services: s.services,
     clients: s.clients,
-    loyalty: Object.fromEntries(
-      pending.map((a) => [a.clientId, loyaltyStatus(a.clientId, s.payments, s.services)])
+    // De todos los clientes, no sólo los pendientes: el Cobro rápido busca en toda la lista.
+    loyalty: Object.fromEntries(s.clients.map((c) => [c.id, loyaltyStatus(c.id, s.payments, s.services)])),
+    // Seña ya pagada por turno (Mercado Pago): se descuenta al cobrar el resto.
+    depositByAppointment: Object.fromEntries(
+      s.payments.filter((p) => p.kind === "sena" && p.appointmentId).map((p) => [p.appointmentId as string, p.amount])
     ),
   }
 }
@@ -286,6 +299,8 @@ export async function getFinanzas(month: string) {
     now: n.toISOString(),
     month,
     isCurrent: month === monthKey(today),
+    /** El mes incluye cobros o gastos cargados del Excel de antes del panel (sin turnos detrás). */
+    hasImported: pay.some((p) => p.imported) || exp.some((e) => e.imported),
     money,
     moneyPrev: summarizePayments(payPrev),
     moneyPrevSpan,
