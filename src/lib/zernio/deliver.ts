@@ -2,6 +2,7 @@ import "server-only"
 import { randomUUID } from "node:crypto"
 import { readZernioConfig } from "./config"
 import { sendMessage } from "./client"
+import { isOwnAccount } from "./own-accounts"
 import type { Conversation } from "@/lib/domain/types"
 
 /** WhatsApp sólo deja escribir libremente dentro de las 24 h del último mensaje del cliente. */
@@ -30,6 +31,10 @@ export async function deliverToChannel(conv: Conversation, body: string, now: Da
     }
   }
   const accountId = conv.accountExternalId || process.env.ZERNIO_ACCOUNT_ID || ""
+  // Nunca mandar desde una cuenta que no sea la de este panel (ver own-accounts.ts).
+  if (!(await isOwnAccount(accountId))) {
+    return { ok: false, error: "Esta conversación es de una cuenta que no pertenece a este panel: no se envía nada." }
+  }
   const sent = await sendMessage({ config }, { conversationId: conv.externalId, accountId, body, idempotencyKey: randomUUID() })
   return sent.ok ? { ok: true, sent: true, externalId: sent.data.messageId } : { ok: false, error: `No se pudo enviar por Zernio: ${sent.message}` }
 }
