@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { freeSlots, isOpen, worksOn } from "./slots"
+import { checkManualBooking, freeSlots, isOpen, offHoursFor, worksOn } from "./slots"
 import { at } from "@/lib/time"
 import type { Appointment } from "./types"
 
@@ -99,5 +99,127 @@ describe("freeSlots", () => {
   it("no ofrece un servicio que el barbero no hace", () => {
     const thiago = { id: "st-thiago", skipsServiceIds: ["sv-color"] }
     expect(freeSlots({ day: DAY, service: { id: "sv-color", durationMin: 120 }, staff: thiago, appointments: [], now: early })).toEqual([])
+  })
+})
+
+describe("barbero con corte al mediodía (dos franjas el mismo día)", () => {
+  // Viernes: 11 a 14 y 15 a 20. Entre medio no atiende.
+  const partido = {
+    id: "st-leo",
+    skipsServiceIds: [] as string[],
+    schedule: [
+      { weekday: 5, start: "11:00", end: "14:00" },
+      { weekday: 5, start: "15:00", end: "20:00" },
+    ],
+  }
+  const hora = { id: "sv-corte", durationMin: 60 }
+
+  it("no ofrece nada durante el corte, y un turno tiene que terminar antes de que empiece", () => {
+    const slots = freeSlots({ day: DAY, service: hora, staff: partido, appointments: [], now: early, stepMin: 30 })
+    expect(slots).toContain("13:00") // 13:00–14:00 entra justo
+    expect(slots).not.toContain("13:30") // terminaría 14:30, en pleno corte
+    expect(slots).not.toContain("14:00")
+    expect(slots).not.toContain("14:30")
+    expect(slots).toContain("15:00")
+  })
+
+  it("sabe que atiende ese día aunque esté partido", () => {
+    expect(worksOn(partido, DAY)).toBe(true)
+  })
+})
+
+describe("horarios pegados al final de otro turno (sin huecos muertos)", () => {
+  const de45 = { id: "sv-corte", durationMin: 45 }
+
+  it("con un turno que termina 17:45, se ofrece 17:45 aunque la grilla sea de una hora", () => {
+    const slots = freeSlots({ day: DAY, service: de45, staff: leo, appointments: [appt("17:00", "17:45")], now: early, stepMin: 60 })
+    expect(slots).toContain("17:45")
+    expect(slots).toContain("18:00") // y la grilla de siempre sigue
+    expect(slots).not.toContain("17:00")
+  })
+
+  it("sin turnos no se inventa ninguna hora fuera de la grilla", () => {
+    const slots = freeSlots({ day: DAY, service: de45, staff: leo, appointments: [], now: early, stepMin: 60 })
+    expect(slots).not.toContain("17:45")
+  })
+
+  it("no ofrece un pegado que no entra antes del cierre", () => {
+    const slots = freeSlots({ day: DAY, service: de45, staff: leo, appointments: [appt("18:30", "19:30")], now: early, stepMin: 60 })
+    expect(slots).not.toContain("19:30") // 19:30 + 45 = 20:15, pasado el cierre
+  })
+})
+
+describe("turno cargado a mano por el equipo (a cualquier minuto, con cualquier duración)", () => {
+  const seba = { id: "st-leo", name: "Seba", skipsServiceIds: [] as string[], schedule: undefined, timeOff: undefined as { startsAt: string; endsAt: string }[] | undefined }
+  const svc = { id: "sv-corte" }
+  const base = { day: DAY, service: svc, staff: seba, appointments: [] as Appointment[], now: early }
+
+  it("acepta 17:15 por 45 minutos: no hace falta que caiga en la grilla", () => {
+    expect(checkManualBooking({ ...base, time: "17:15", durationMin: 45 })).toEqual({ ok: true, warnings: [] })
+  })
+
+  it("rechaza pisar a otro cliente, diciendo cuál", () => {
+    const r = checkManualBooking({ ...base, appointments: [appt("17:00", "17:45")], time: "17:30", durationMin: 45 })
+    expect(r).toMatchObject({ ok: false })
+    expect(r.ok === false && r.error).toContain("17:00 a 17:45")
+  })
+
+  it("dos turnos pegados están bien: 17:45 después de uno que termina 17:45", () => {
+    expect(checkManualBooking({ ...base, appointments: [appt("17:00", "17:45")], time: "17:45", durationMin: 45 }).ok).toBe(true)
+  })
+
+  it("rechaza el local cerrado y lo que se pasa del horario del local", () => {
+    expect(checkManualBooking({ ...base, day: "2026-09-20", time: "12:00", durationMin: 60 }).ok).toBe(false) // domingo
+    expect(checkManualBooking({ ...base, time: "19:30", durationMin: 60 }).ok).toBe(false) // termina 20:30
+    expect(checkManualBooking({ ...base, time: "10:30", durationMin: 30 }).ok).toBe(false) // antes de abrir
+  })
+
+  it("hoy no deja cargar en el pasado, pero tolera a alguien que recién llegó", () => {
+    const ahora = new Date("2026-09-18T16:40:00-03:00")
+    expect(checkManualBooking({ ...base, now: ahora, time: "15:00", durationMin: 60 }).ok).toBe(false)
+    expect(checkManualBooking({ ...base, now: ahora, time: "16:20", durationMin: 40 }).ok).toBe(true) // empezó hace 20 min
+  })
+
+  it("avisa, sin trabar, si es fuera del horario del barbero", () => {
+    const partido = { ...seba, schedule: [{ weekday: 5, start: "11:00", end: "14:00" }, { weekday: 5, start: "15:00", end: "20:00" }] }
+    const r = checkManualBooking({ ...base, staff: partido, time: "14:15", durationMin: 30 })
+    expect(r.ok).toBe(true)
+    expect(r.ok && r.warnings[0]).toContain("no trabaja en ese horario")
+    expect(r.ok && r.warnings[0]).toContain("11:00 a 14:00 y 15:00 a 20:00")
+  })
+
+  it("avisa, sin trabar, si coincide con un franco o un turno fijo", () => {
+    const conFijo = { ...seba, timeOff: [{ startsAt: at(DAY, "18:00").toISOString(), endsAt: at(DAY, "19:00").toISOString() }] }
+    const r = checkManualBooking({ ...base, staff: conFijo, time: "18:00", durationMin: 60 })
+    expect(r.ok).toBe(true)
+    expect(r.ok && r.warnings.join(" ")).toContain("franco o un turno fijo")
+  })
+
+  it("no deja agendar un servicio que el barbero no hace", () => {
+    expect(checkManualBooking({ ...base, staff: { ...seba, skipsServiceIds: ["sv-corte"] }, time: "12:00", durationMin: 60 }).ok).toBe(false)
+  })
+})
+
+describe("cuándo NO atiende un barbero (para marcarlo en la agenda)", () => {
+  const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`
+  const view = (r: [number, number][]) => r.map(([a, b]) => `${hm(a)}-${hm(b)}`)
+
+  it("sin horario propio, atiende todo el horario del local: no hay tramos libres", () => {
+    expect(offHoursFor({ schedule: undefined }, DAY)).toEqual([])
+  })
+
+  it("con corte al mediodía, el corte es un tramo", () => {
+    const s = { schedule: [{ weekday: 5, start: "11:00", end: "14:00" }, { weekday: 5, start: "15:00", end: "20:00" }] }
+    expect(view(offHoursFor(s, DAY))).toEqual(["14:00-15:00"])
+  })
+
+  it("si entra tarde y sale temprano, se marcan los dos extremos", () => {
+    const s = { schedule: [{ weekday: 5, start: "12:30", end: "18:00" }] }
+    expect(view(offHoursFor(s, DAY))).toEqual(["11:00-12:30", "18:00-20:00"])
+  })
+
+  it("un día que no trabaja es todo el horario del local", () => {
+    const s = { schedule: [{ weekday: 2, start: "11:00", end: "20:00" }] } // sólo los martes; DAY es viernes
+    expect(view(offHoursFor(s, DAY))).toEqual(["11:00-20:00"])
   })
 })

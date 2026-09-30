@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache"
 import { assertPanelSession } from "@/lib/auth/guard"
 import { BRAND } from "@/config/brand"
 import { at, dayKey, hmToMinutes, minutesOfDay } from "@/lib/time"
+import { normalizeShifts } from "@/lib/domain/schedule"
+import { fixedSlotsClash } from "@/lib/domain/fixed-slots"
 import { db, now, store } from "./repo"
 import type { ServiceCategory, WorkShift } from "@/lib/domain/types"
 
@@ -71,23 +73,18 @@ export async function saveStaff(input: { id?: string; name: string; commissionPc
   return { ok: true }
 }
 
-/** Reemplaza el horario semanal de un barbero. Cada franja tiene que caer dentro del horario del local. */
+/**
+ * Reemplaza el horario semanal de un barbero. Puede tener varias franjas el
+ * mismo día (un corte al mediodía: 11 a 14 y 15 a 20) y empezar o terminar a
+ * cualquier múltiplo de 5 minutos. Las reglas (dentro del horario del local,
+ * sin pisarse) están en `normalizeShifts`, con tests.
+ */
 export async function saveSchedule(staffId: string, shifts: WorkShift[]): Promise<Result> {
   await assertPanelSession()
   if (!(await db()).staff.some((m) => m.id === staffId)) return { ok: false, error: "No encontré a esa persona." }
-  const open = hmToMinutes(BRAND.openingHours.open)
-  const close = hmToMinutes(BRAND.openingHours.close)
-  const clean: WorkShift[] = []
-  for (const sh of shifts ?? []) {
-    if (!Number.isInteger(sh.weekday) || sh.weekday < 0 || sh.weekday > 6) return { ok: false, error: "Día inválido." }
-    if (!HHMM.test(sh.start) || !HHMM.test(sh.end)) return { ok: false, error: "Revisá las horas." }
-    const a = hmToMinutes(sh.start)
-    const b = hmToMinutes(sh.end)
-    if (b <= a) return { ok: false, error: "La hora de salida tiene que ser después de la de entrada." }
-    if (a < open || b > close) return { ok: false, error: `El local abre de ${BRAND.openingHours.open} a ${BRAND.openingHours.close}.` }
-    clean.push({ weekday: sh.weekday, start: sh.start, end: sh.end })
-  }
-  await store().setStaffSchedule(staffId, clean)
+  const checked = normalizeShifts(shifts)
+  if (!checked.ok) return checked
+  await store().setStaffSchedule(staffId, checked.shifts)
   refresh()
   return { ok: true }
 }
@@ -184,6 +181,10 @@ export async function saveFixedSlot(input: {
     if (!(BRAND.openingHours.days as readonly number[]).includes(new Date(`${onDate}T12:00:00Z`).getUTCDay())) return { ok: false, error: "Ese día el local está cerrado." }
     if (onDate < dayKey(await now())) return { ok: false, error: "Esa fecha ya pasó." }
   }
+
+  // Con horarios a cualquier minuto, es fácil cargar dos que se pisan sin darse cuenta.
+  const clash = s.fixedSlots.find((f) => f.active && f.id !== input.id && fixedSlotsClash({ staffId: member.id, weekday, onDate, start: input.start, end: input.end }, f))
+  if (clash) return { ok: false, error: `Se pisa con otro turno fijo de ${member.name} (${clash.start} a ${clash.end}).` }
 
   await store().saveFixedSlot({
     id: input.id,

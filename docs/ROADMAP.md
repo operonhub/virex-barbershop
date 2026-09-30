@@ -183,6 +183,10 @@ desde una cuenta de Zernio que no sea del profile de Virex (`ZERNIO_PROFILE_ID` 
 producción; cada webhook en Zernio va filtrado por profile). ✅ **Tarjetas de fidelidad** del
 Excel cargadas (12 clientes, 20 sellos, `scripts/importar-tarjetas.mjs`). ✅ **Turnos fijos visibles
 en la Agenda y en Hoy** (bloque rayado hasta que un turno real lo ocupa).
+**Estado 30/09 (agenda flexible):** ✅ Horarios a cualquier minuto (de 5 en 5) en turnos fijos, francos,
+Nuevo turno y Turno rápido; duración elegible por turno. ✅ Horario del barbero con **varias franjas
+por día** (corte al mediodía) y el "no atiende" marcado en la Agenda y en Hoy. ✅ Los horarios que
+ofrecen el agente y la web se "pegan" al final de cada turno (sin huecos muertos).
 
 1. En `/reservar`: el turno se crea `pendiente` con `hold_expires_at` a 15 minutos, se crea
    una preferencia de Checkout Pro y se redirige al pago. El pendiente ya bloquea el horario

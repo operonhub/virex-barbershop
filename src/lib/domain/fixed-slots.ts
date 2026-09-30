@@ -56,12 +56,40 @@ export function fixedSlotsOn(slots: FixedSlot[], day: string): FixedSlot[] {
  * encima. Cuando el cliente fijo llega y se lo anota (Turno rápido, agenda),
  * el turno de verdad ocupa ese lugar: mostrar también el bloque fijo sería
  * verlo dos veces. `appointments` son los de ese mismo día.
+ *
+ * "Ocupado" es que el turno real cubra la MAYOR PARTE del fijo. Si sólo lo roza
+ * (un corte de 16:35 a 17:35 contra un fijo de 17:15 a 18:00), el fijo se sigue
+ * mostrando: ese choque es justo lo que el equipo tiene que ver.
  */
 export function pendingFixedSlots(fixed: FixedSlot[], appointments: Appointment[]): FixedSlot[] {
   const live = appointments.filter((a) => a.status !== "cancelado" && a.status !== "no_show")
   return fixed.filter((f) => {
     const from = hmToMinutes(f.start)
     const to = hmToMinutes(f.end)
-    return !live.some((a) => a.staffId === f.staffId && minutesOfDay(a.startsAt) < to && minutesOfDay(a.endsAt) > from)
+    const covered = live
+      .filter((a) => a.staffId === f.staffId)
+      .reduce((sum, a) => sum + Math.max(0, Math.min(to, minutesOfDay(a.endsAt)) - Math.max(from, minutesOfDay(a.startsAt))), 0)
+    return covered * 2 < to - from
   })
+}
+
+/**
+ * ¿Se pisan dos turnos fijos del mismo barbero? Con horarios a cualquier minuto
+ * es fácil cargar "17:00 a 17:45" y "17:30 a 18:15" sin darse cuenta. Un semanal
+ * y uno de un día se pisan si ese día cae en el mismo día de la semana.
+ */
+export function fixedSlotsClash(
+  a: Pick<FixedSlot, "staffId" | "weekday" | "onDate" | "start" | "end">,
+  b: Pick<FixedSlot, "staffId" | "weekday" | "onDate" | "start" | "end">
+): boolean {
+  if (a.staffId !== b.staffId) return false
+  const sameDay =
+    a.weekday !== null && b.weekday !== null
+      ? a.weekday === b.weekday
+      : a.weekday !== null
+        ? weekday(b.onDate!) === a.weekday
+        : b.weekday !== null
+          ? weekday(a.onDate!) === b.weekday
+          : a.onDate === b.onDate
+  return sameDay && hmToMinutes(a.start) < hmToMinutes(b.end) && hmToMinutes(a.end) > hmToMinutes(b.start)
 }

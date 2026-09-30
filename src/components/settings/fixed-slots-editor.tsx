@@ -8,16 +8,16 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Switch } from "@/components/ui/switch"
 import { BRAND } from "@/config/brand"
 import { removeFixedSlot, saveFixedSlot } from "@/lib/data/settings-actions"
-import { formatDayShort, WEEKDAY_SHORT } from "@/lib/time"
+import { formatDayShort, hmToMinutes, minutesToHm, WEEKDAY_SHORT } from "@/lib/time"
+import { TimeSelect } from "@/components/forms/time-select"
 import { cn } from "@/lib/utils"
 import type { FixedSlot, Staff } from "@/lib/domain/types"
 import { Choice } from "./services-editor"
 
 /** Días que abre el local, empezando por el martes (no por el domingo). */
 const OPEN_DAYS = [...BRAND.openingHours.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
-const open = Number(BRAND.openingHours.open.slice(0, 2))
-const close = Number(BRAND.openingHours.close.slice(0, 2))
-const HOURS = Array.from({ length: close - open + 1 }, (_, i) => `${String(open + i).padStart(2, "0")}:00`)
+const SHOP_OPEN = hmToMinutes(BRAND.openingHours.open)
+const SHOP_CLOSE = hmToMinutes(BRAND.openingHours.close)
 const dayOrder = (wd: number) => (wd + 6) % 7
 
 function sortSlots(a: FixedSlot, b: FixedSlot) {
@@ -143,6 +143,14 @@ function SlotDialog({ slot, staff, today, onClose }: { slot: Partial<FixedSlot>;
   const [end, setEnd] = useState(slot.end ?? "19:00")
   const [label, setLabel] = useState(slot.label ?? "")
   const [pending, startTransition] = useTransition()
+  const duration = hmToMinutes(end) - hmToMinutes(start)
+
+  // Al mover el inicio, el fin se corre igual: se conserva cuánto dura.
+  function changeStart(v: string) {
+    const span = duration > 0 ? duration : 60
+    setStart(v)
+    setEnd(minutesToHm(Math.min(hmToMinutes(v) + span, SHOP_CLOSE)))
+  }
 
   function submit() {
     startTransition(async () => {
@@ -164,8 +172,6 @@ function SlotDialog({ slot, staff, today, onClose }: { slot: Partial<FixedSlot>;
       onClose()
     })
   }
-
-  const select = "num h-10 rounded-lg border border-line-strong bg-surface-2 px-2 text-[14px] text-ivory"
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -219,19 +225,16 @@ function SlotDialog({ slot, staff, today, onClose }: { slot: Partial<FixedSlot>;
             </label>
           )}
 
-          <div className="flex items-center gap-2 text-[13px] text-ivory-3">
-            De
-            <select value={start} onChange={(e) => setStart(e.target.value)} aria-label="Desde" className={select}>
-              {HOURS.slice(0, -1).map((h) => (
-                <option key={h}>{h}</option>
-              ))}
-            </select>
-            a
-            <select value={end} onChange={(e) => setEnd(e.target.value)} aria-label="Hasta" className={select}>
-              {HOURS.slice(1).map((h) => (
-                <option key={h}>{h}</option>
-              ))}
-            </select>
+          <div>
+            <div className="flex flex-wrap items-center gap-2 text-[13px] text-ivory-3">
+              De
+              <TimeSelect value={start} onChange={changeStart} label="Desde" to={minutesToHm(SHOP_CLOSE - 5)} className="h-10" />
+              a
+              <TimeSelect value={end} onChange={setEnd} label="Hasta" from={minutesToHm(SHOP_OPEN + 5)} className="h-10" />
+              {duration > 0 && <span className="num text-ivory-2">· {duration} min</span>}
+            </div>
+            {duration <= 0 && <p className="mt-1.5 text-[12px] text-danger">El fin tiene que ser después del inicio.</p>}
+            <p className="mt-1.5 text-[12px] text-ivory-3">Las horas van de 5 en 5 minutos: 17:15 a 18:00, 17:00 a 17:45, lo que necesite.</p>
           </div>
 
           <label className="block">
@@ -244,7 +247,7 @@ function SlotDialog({ slot, staff, today, onClose }: { slot: Partial<FixedSlot>;
             />
           </label>
 
-          <Button size="lg" className="h-10 w-full font-semibold" disabled={pending || !staffId} onClick={submit}>
+          <Button size="lg" className="h-10 w-full font-semibold" disabled={pending || !staffId || duration <= 0} onClick={submit}>
             {pending ? "Guardando…" : "Guardar turno fijo"}
           </Button>
         </div>

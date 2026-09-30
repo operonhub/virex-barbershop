@@ -6,10 +6,12 @@ import { Check, Search, UserPlus } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { createAppointment } from "@/lib/data/actions"
-import { freeSlots, isOpen } from "@/lib/domain/slots"
-import { addDays, dayKey, formatDayShort, WEEKDAY_SHORT, weekday } from "@/lib/time"
+import { checkManualBooking, freeSlots, isOpen } from "@/lib/domain/slots"
+import { TimeSelect } from "@/components/forms/time-select"
+import { addDays, dayKey, formatDayShort, hmToMinutes, minutesToHm, WEEKDAY_SHORT, weekday } from "@/lib/time"
 import { formatARS } from "@/lib/money"
 import { cn } from "@/lib/utils"
+import { BRAND } from "@/config/brand"
 import type { Appointment, Client, Service, Staff } from "@/lib/domain/types"
 
 /**
@@ -97,6 +99,8 @@ function NewAppointmentForm({
   const [staffId, setStaffId] = useState(prefill.staffId ?? catalog.staff[0].id)
   const [day, setDay] = useState(prefill.day && isOpen(prefill.day) ? prefill.day : days[0])
   const [time, setTime] = useState<string | null>(prefill.time ?? null)
+  // Cuánto dura este turno, si no es lo que dura el servicio (un corte de 45', de 30'…).
+  const [durationOverride, setDurationOverride] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
 
   const service = catalog.services.find((s) => s.id === serviceId)!
@@ -111,10 +115,15 @@ function NewAppointmentForm({
       .slice(0, 5)
   }, [query, catalog.clients])
 
-  const slots = freeSlots({ day, service, staff, appointments: catalog.appointments, now, leadMin: 0, stepMin: catalog.slotStepMin })
-  // Si el horario elegido deja de estar libre al cambiar servicio o barbero,
-  // se descarta en vez de mandar al servidor algo que va a rebotar.
-  const chosen = time && slots.includes(time) ? time : null
+  const duration = durationOverride ?? service.durationMin
+  // Las horas sugeridas siguen la duración elegida (y se "pegan" a lo que ya hay).
+  const slots = freeSlots({ day, service: { ...service, durationMin: duration }, staff, appointments: catalog.appointments, now, leadMin: 0, stepMin: catalog.slotStepMin })
+  // Cualquier hora sirve (de 5 en 5): lo único que frena es lo imposible. Lo
+  // discutible (fuera del horario del barbero, franco, turno fijo) sólo avisa.
+  const check = time ? checkManualBooking({ day, time, durationMin: duration, service, staff, appointments: catalog.appointments, now }) : null
+  const chosen = time && check?.ok ? time : null
+  const warnings = check?.ok ? check.warnings : []
+  const endTime = chosen ? minutesToHm(hmToMinutes(chosen) + duration) : null
 
   const canSubmit = (client || query.trim().length >= 2) && chosen && !pending
 
@@ -126,6 +135,7 @@ function NewAppointmentForm({
         time: chosen,
         staffId,
         serviceId,
+        durationMin: duration,
         clientId: client?.id,
         newClient: client ? undefined : { name: query.trim(), phone: newPhone },
       })
@@ -133,7 +143,8 @@ function NewAppointmentForm({
         toast.error(res.error)
         return
       }
-      toast.success(`Turno agendado · ${formatDayShort(day)} ${chosen} con ${staff.name}`)
+      toast.success(`Turno agendado · ${formatDayShort(day)} ${chosen} a ${endTime} con ${staff.name}`)
+      if (res.data?.warnings?.length) toast.warning(res.data.warnings.join(" "))
       onDone()
     })
   }
@@ -211,7 +222,14 @@ function NewAppointmentForm({
             {catalog.services
               .filter((s) => s.active)
               .map((s) => (
-                <Choice key={s.id} selected={s.id === serviceId} onClick={() => setServiceId(s.id)}>
+                <Choice
+                  key={s.id}
+                  selected={s.id === serviceId}
+                  onClick={() => {
+                    setServiceId(s.id)
+                    setDurationOverride(null)
+                  }}
+                >
                   <span className="block text-[13.5px] font-medium text-ivory">{s.name}</span>
                   <span className="num block text-[12px] text-ivory-3">
                     {formatARS(s.price)} · {s.durationMin} min
@@ -259,11 +277,11 @@ function NewAppointmentForm({
           </div>
         </Field>
 
-        {/* Horario */}
-        <Field label={`Horarios libres de ${staff.name}`}>
+        {/* Horario: sugerencias, y cualquier otra hora/duración a mano */}
+        <Field label={`Horario con ${staff.name}`}>
           {slots.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-line-strong px-3 py-4 text-center text-[13px] text-ivory-3">
-              {staff.name} no tiene huecos para {service.name.toLowerCase()} ese día. Probá con otro barbero o día.
+            <p className="rounded-lg border border-dashed border-line-strong px-3 py-3 text-center text-[13px] text-ivory-3">
+              {staff.name} no tiene huecos de {duration} min ese día. Elegí otra hora abajo, o probá con otro barbero o día.
             </p>
           ) : (
             <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
@@ -284,6 +302,43 @@ function NewAppointmentForm({
               ))}
             </div>
           )}
+
+          <div className="mt-3 rounded-lg border border-line bg-surface-1 p-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label className="flex items-center gap-2 text-[13px] text-ivory-2">
+                Otra hora
+                <TimeSelect value={time ?? ""} onChange={setTime} label="Hora de inicio" to={minutesToHm(hmToMinutes(BRAND.openingHours.close) - 5)} className="h-10" />
+              </label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[13px] text-ivory-2">Dura</span>
+                {durationChoices(service.durationMin).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={m === duration}
+                    onClick={() => setDurationOverride(m === service.durationMin ? null : m)}
+                    className={cn(
+                      "num h-9 rounded-md border px-2.5 text-[13px] font-medium transition-colors",
+                      m === duration ? "border-gold bg-gold/10 text-ivory" : "border-line bg-surface-2 text-ivory-2 hover:border-line-strong"
+                    )}
+                  >
+                    {m}′
+                  </button>
+                ))}
+              </div>
+            </div>
+            {time && check && !check.ok && <p className="mt-2 text-[12.5px] text-danger">{check.error}</p>}
+            {chosen && warnings.length > 0 && (
+              <p className="mt-2 text-[12.5px] text-gold">
+                Ojo: {warnings.join(" ")} Igual se puede agendar.
+              </p>
+            )}
+            {chosen && warnings.length === 0 && (
+              <p className="mt-2 text-[12.5px] text-ok">
+                Libre de {chosen} a {endTime}.
+              </p>
+            )}
+          </div>
         </Field>
       </div>
 
@@ -291,7 +346,7 @@ function NewAppointmentForm({
         <p className="min-w-0 flex-1 truncate text-[13px] text-ivory-2">
           {chosen ? (
             <>
-              <b className="font-medium text-ivory">{service.name}</b> · {formatDayShort(day)} {chosen} con {staff.name}{" "}
+              <b className="font-medium text-ivory">{service.name}</b> · {formatDayShort(day)} {chosen} a {endTime} con {staff.name}{" "}
               · <span className="num">{formatARS(service.price)}</span>
             </>
           ) : (
@@ -304,6 +359,11 @@ function NewAppointmentForm({
       </div>
     </div>
   )
+}
+
+/** Duraciones para elegir: las comunes, más la del servicio si es otra. */
+function durationChoices(serviceMin: number) {
+  return [...new Set([30, 45, 60, 90, serviceMin])].sort((a, b) => a - b)
 }
 
 function nextOpenDays(from: string, count: number) {

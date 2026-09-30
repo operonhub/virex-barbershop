@@ -141,6 +141,16 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
   duplicar esa lógica en ningún componente. Respeta el **horario propio de cada barbero**
   (`staff.schedule`, tabla `staff_schedules`; sin horario = el del local) y sus **francos**
   (`staff.timeOff`). `worksOn()` dice si atiende ese día.
+- **La agenda es flexible, no cuadrada.** Lo que se OFRECE (agente, web) sale de `freeSlots`:
+  grilla de Ajustes (30/45/60) **más** un horario pegado al final de cada turno o bloqueo
+  (un corte de 45' que termina 17:45 ofrece 17:45, no deja un hueco muerto), y respeta las
+  **varias franjas por día** de cada barbero (11 a 14 y 15 a 20; `normalizeShifts`,
+  `offHoursFor` en `domain/schedule.ts` y `slots.ts`). Lo que el EQUIPO carga a mano
+  (Nuevo turno, Turno rápido, `checkManualBooking`) acepta **cualquier hora de 5 en 5 y
+  cualquier duración**: sólo frena lo imposible (local cerrado, fuera del horario del local,
+  pisar a otro cliente) y AVISA, sin trabar, lo discutible (fuera del horario del barbero,
+  franco, turno fijo). Todas las horas del panel usan `components/forms/time-select.tsx`.
+  Turnos fijos: no se pueden cargar dos que se pisen para el mismo barbero (`fixedSlotsClash`).
 - **Chat de prueba del agente en ensayo** con la base real (`ToolContext.dryRun`): corre todas
   las validaciones y no escribe nada. En la demo en memoria sí agenda.
 - **El doble turno lo frena la base**, no sólo la app: `appointments_no_overlap` (EXCLUDE sobre

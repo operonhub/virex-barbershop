@@ -11,6 +11,7 @@ import { setAppointmentStatus } from "@/lib/data/actions"
 import { formatARS } from "@/lib/money"
 import { dayKey, formatDayShort, hm, hmToMinutes, minutesOfDay, minutesToHm } from "@/lib/time"
 import { cn } from "@/lib/utils"
+import { offHoursFor } from "@/lib/domain/slots"
 import { useNewAppointment } from "./new-appointment"
 import { SOURCE_LABEL, StatusPill } from "./status"
 import { ChargeDialog } from "@/components/caja/charge-dialog"
@@ -136,6 +137,22 @@ export function DayGrid({
                       className="absolute inset-x-0 h-px bg-line/40"
                       style={{ top: (m + 30 - openMin) * PX_PER_MIN }}
                     />
+                  ))}
+
+                  {/* Cuándo NO atiende (corte del mediodía, antes de entrar, después de salir): oscurecido, para que no parezca un hueco libre. */}
+                  {offHoursFor(s, day).map(([a, b]) => (
+                    <div
+                      key={`off${a}`}
+                      aria-hidden
+                      className="pointer-events-none absolute inset-x-0 bg-black/30 bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgb(255_255_255/0.02)_6px_12px)]"
+                      style={{ top: (a - openMin) * PX_PER_MIN, height: (b - a) * PX_PER_MIN }}
+                    >
+                      {(b - a) * PX_PER_MIN >= 30 && (
+                        <span className="num block px-2.5 pt-1.5 text-[11px] text-ivory-3/70">
+                          {b - a === closeMin - openMin ? "No trabaja hoy" : `No atiende · ${minutesToHm(a)} a ${minutesToHm(b)}`}
+                        </span>
+                      )}
+                    </div>
                   ))}
 
                   {/* Turnos fijos: el horario está reservado para alguien. Rayado, para no confundirlo con un turno. */}

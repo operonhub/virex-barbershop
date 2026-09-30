@@ -2,7 +2,8 @@
 
 import Link from "next/link"
 import { BRAND } from "@/config/brand"
-import { hm, hmToMinutes, minutesOfDay } from "@/lib/time"
+import { hm, hmToMinutes, minutesOfDay, minutesToHm } from "@/lib/time"
+import { offHoursFor } from "@/lib/domain/slots"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { STATUS_LABEL } from "@/components/agenda/status"
@@ -78,6 +79,16 @@ export function DayTimeline({
                 <div className="relative h-11 flex-1 rounded-lg bg-surface-2/60">
                   {hours.slice(1, -1).map((m) => (
                     <span key={m} aria-hidden className="absolute inset-y-0 w-px bg-line" style={{ left: pos(m) }} />
+                  ))}
+                  {/* Cuándo no atiende (corte del mediodía, antes de entrar, después de salir). */}
+                  {offHoursFor(member, day).map(([a, b]) => (
+                    <span
+                      key={`off${a}`}
+                      aria-hidden
+                      title={`No atiende de ${minutesToHm(a)} a ${minutesToHm(b)}`}
+                      className="pointer-events-none absolute inset-y-0 rounded-sm bg-black/30 bg-[repeating-linear-gradient(135deg,transparent_0_5px,rgb(255_255_255/0.025)_5px_10px)]"
+                      style={{ left: pos(a), width: `${((b - a) / span) * 100}%` }}
+                    />
                   ))}
                   {/* Turnos fijos sin ocupar: rayados, el horario está reservado para alguien. */}
                   {fixed

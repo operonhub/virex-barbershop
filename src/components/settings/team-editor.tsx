@@ -1,23 +1,22 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { CalendarOff, Pencil, Plus, Trash2 } from "lucide-react"
+import { CalendarOff, Pencil, Plus, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { BRAND } from "@/config/brand"
 import { addTimeOff, removeTimeOff, saveSchedule, saveStaff } from "@/lib/data/settings-actions"
-import { dayKey, formatDayShort, hm, WEEKDAY_SHORT } from "@/lib/time"
+import { dayKey, formatDayShort, hm, hmToMinutes, minutesToHm, WEEKDAY_SHORT } from "@/lib/time"
+import { breakBetween, normalizeShifts, withAnotherRange } from "@/lib/domain/schedule"
+import { TimeSelect } from "@/components/forms/time-select"
 import { cn } from "@/lib/utils"
 import type { Staff, TimeOffEntry, WorkShift } from "@/lib/domain/types"
 import { Choice, Toggle } from "./services-editor"
 
 /** Días que abre el local, empezando por el martes (no por el domingo). */
 const OPEN_DAYS = [...BRAND.openingHours.days].sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7))
-const open = Number(BRAND.openingHours.open.slice(0, 2))
-const close = Number(BRAND.openingHours.close.slice(0, 2))
-const HOURS = Array.from({ length: close - open + 1 }, (_, i) => `${String(open + i).padStart(2, "0")}:00`)
 const DEFAULT_SHIFT = { start: BRAND.openingHours.open, end: BRAND.openingHours.close }
 
 /**
@@ -66,28 +65,43 @@ export function TeamEditor({ staff, timeOff, today }: { staff: Staff[]; timeOff:
 
 /* ── Horario semanal ── */
 
-type Row = { works: boolean; start: string; end: string }
+type Range = { start: string; end: string }
+type Row = { works: boolean; ranges: Range[] }
+
+const SHOP_CLOSE = hmToMinutes(BRAND.openingHours.close)
 
 function toRows(member: Staff): Record<number, Row> {
   return Object.fromEntries(
     OPEN_DAYS.map((wd) => {
       // Sin horario propio (demo): trabaja todo el horario del local.
-      if (!member.schedule) return [wd, { works: true, ...DEFAULT_SHIFT }]
-      const shift = member.schedule.find((s) => s.weekday === wd)
-      return [wd, shift ? { works: true, start: shift.start, end: shift.end } : { works: false, ...DEFAULT_SHIFT }]
+      if (!member.schedule) return [wd, { works: true, ranges: [{ ...DEFAULT_SHIFT }] }]
+      const ranges = member.schedule
+        .filter((s) => s.weekday === wd)
+        .sort((a, b) => a.start.localeCompare(b.start))
+        .map((s) => ({ start: s.start, end: s.end }))
+      return [wd, ranges.length ? { works: true, ranges } : { works: false, ranges: [{ ...DEFAULT_SHIFT }] }]
     })
   )
 }
 
+/**
+ * Horario de la semana. Cada día puede tener varias franjas (un corte al
+ * mediodía: 11 a 14 y 15 a 20) y las horas van de 5 en 5 minutos. El agente, la
+ * reserva web y "Nuevo turno" no ofrecen nada en el corte.
+ */
 function ScheduleEditor({ member }: { member: Staff }) {
   const initial = JSON.stringify(toRows(member))
   const [rows, setRows] = useState(() => toRows(member))
   const [pending, startTransition] = useTransition()
   const dirty = JSON.stringify(rows) !== initial
-  const set = (wd: number, patch: Partial<Row>) => setRows((cur) => ({ ...cur, [wd]: { ...cur[wd], ...patch } }))
+  const setRow = (wd: number, patch: Partial<Row>) => setRows((cur) => ({ ...cur, [wd]: { ...cur[wd], ...patch } }))
+  const setRange = (wd: number, i: number, patch: Partial<Range>) =>
+    setRows((cur) => ({ ...cur, [wd]: { ...cur[wd], ranges: cur[wd].ranges.map((r, k) => (k === i ? { ...r, ...patch } : r)) } }))
 
   function save() {
-    const shifts: WorkShift[] = OPEN_DAYS.filter((wd) => rows[wd].works).map((wd) => ({ weekday: wd, start: rows[wd].start, end: rows[wd].end }))
+    const shifts: WorkShift[] = OPEN_DAYS.filter((wd) => rows[wd].works).flatMap((wd) => rows[wd].ranges.map((r) => ({ weekday: wd, start: r.start, end: r.end })))
+    const checked = normalizeShifts(shifts)
+    if (!checked.ok) return void toast.error(checked.error)
     startTransition(async () => {
       const res = await saveSchedule(member.id, shifts)
       if (!res.ok) return void toast.error(res.error)
@@ -101,18 +115,44 @@ function ScheduleEditor({ member }: { member: Staff }) {
       <ul className="divide-y divide-line rounded-lg border border-line">
         {OPEN_DAYS.map((wd) => {
           const r = rows[wd]
+          const more = withAnotherRange(r.ranges)
           return (
-            <li key={wd} className="flex min-h-11 items-center gap-3 px-3 py-1.5">
-              <span className="w-9 text-[13px] font-medium text-ivory">{WEEKDAY_SHORT[wd]}</span>
-              <Switch className="data-checked:bg-ivory-2" checked={r.works} onCheckedChange={(v) => set(wd, { works: v })} aria-label={`${member.name} trabaja el ${WEEKDAY_SHORT[wd]}`} />
+            <li key={wd} className="flex min-h-11 items-start gap-3 px-3 py-2">
+              <span className="w-9 pt-1.5 text-[13px] font-medium text-ivory">{WEEKDAY_SHORT[wd]}</span>
+              <span className="pt-1">
+                <Switch className="data-checked:bg-ivory-2" checked={r.works} onCheckedChange={(v) => setRow(wd, { works: v })} aria-label={`${member.name} trabaja el ${WEEKDAY_SHORT[wd]}`} />
+              </span>
               {r.works ? (
-                <span className="flex items-center gap-1.5 text-[13px] text-ivory-3">
-                  <HourSelect value={r.start} onChange={(v) => set(wd, { start: v })} label="Entra" />
-                  a
-                  <HourSelect value={r.end} onChange={(v) => set(wd, { end: v })} label="Sale" />
-                </span>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  {r.ranges.map((range, i) => {
+                    const prev = r.ranges[i - 1]
+                    const gap = prev ? breakBetween(prev, range) : null
+                    const bad = hmToMinutes(range.end) <= hmToMinutes(range.start)
+                    return (
+                      <div key={i}>
+                        {gap && <p className="mb-1 text-[11.5px] text-ivory-3">Corte de {gap.from} a {gap.to}: no atiende</p>}
+                        <div className="flex flex-wrap items-center gap-1.5 text-[13px] text-ivory-3">
+                          <TimeSelect value={range.start} onChange={(v) => setRange(wd, i, { start: v })} label="Entra" to={minutesToHm(SHOP_CLOSE - 5)} />
+                          a
+                          <TimeSelect value={range.end} onChange={(v) => setRange(wd, i, { end: v })} label="Sale" from={minutesToHm(hmToMinutes(BRAND.openingHours.open) + 5)} />
+                          {r.ranges.length > 1 && (
+                            <Button variant="ghost" size="icon" aria-label="Quitar esta franja" onClick={() => setRow(wd, { ranges: r.ranges.filter((_, k) => k !== i) })}>
+                              <X />
+                            </Button>
+                          )}
+                          {bad && <span className="text-[11.5px] text-danger">La salida tiene que ser después de la entrada</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {more && (
+                    <Button variant="ghost" size="sm" className="-ml-2 h-8" onClick={() => setRow(wd, { ranges: more })}>
+                      <Plus /> Agregar franja (corte al mediodía)
+                    </Button>
+                  )}
+                </div>
               ) : (
-                <span className="text-[13px] text-ivory-3">No trabaja</span>
+                <span className="pt-1.5 text-[13px] text-ivory-3">No trabaja</span>
               )}
             </li>
           )
@@ -126,23 +166,6 @@ function ScheduleEditor({ member }: { member: Staff }) {
         </div>
       )}
     </div>
-  )
-}
-
-function HourSelect({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label={label}
-      className="num h-8 rounded-md border border-line-strong bg-surface-2 px-1.5 text-[13px] text-ivory"
-    >
-      {HOURS.map((h) => (
-        <option key={h} value={h}>
-          {h}
-        </option>
-      ))}
-    </select>
   )
 }
 
@@ -268,7 +291,7 @@ function TimeOffDialog({ member, today, onClose }: { member: Staff; today: strin
                 <input type="date" value={fromDay} min={today} onChange={(e) => setFromDay(e.target.value)} className={dateClass} />
               </label>
               <div className="flex items-center gap-2 text-[13px] text-ivory-3">
-                De <HourSelect value={fromTime} onChange={setFromTime} label="Desde" /> a <HourSelect value={toTime} onChange={setToTime} label="Hasta" />
+                De <TimeSelect value={fromTime} onChange={setFromTime} label="Desde" /> a <TimeSelect value={toTime} onChange={setToTime} label="Hasta" />
               </div>
             </div>
           )}

@@ -8,7 +8,7 @@ import { deliverToChannel } from "@/lib/zernio/deliver"
 import { startDepositCheckout } from "@/lib/mercadopago/deposit"
 import { at, dayKey } from "@/lib/time"
 import { formatARS } from "@/lib/money"
-import { freeSlots } from "@/lib/domain/slots"
+import { checkManualBooking, freeSlots } from "@/lib/domain/slots"
 import { loyaltyDiscount, loyaltyStatus } from "@/lib/domain/loyalty"
 import type {
   AgentSettings,
@@ -44,12 +44,14 @@ type NewAppointmentInput = {
   newClient?: { name: string; phone?: string }
   source?: AppointmentSource
   notes?: string
+  /** Sólo en los turnos que carga el equipo: cuánto dura, si no es lo que dura el servicio. */
+  durationMin?: number
 }
 
-/** Desde el panel: el equipo puede cargar a cualquier hora (cada 5 min) y sin anticipación mínima. */
-export async function createAppointment(input: NewAppointmentInput): Promise<Result<{ id: string }>> {
+/** Desde el panel: el equipo carga a cualquier hora y con cualquier duración (ver `checkManualBooking`). */
+export async function createAppointment(input: NewAppointmentInput): Promise<Result<{ id: string; warnings?: string[] }>> {
   await assertPanelSession()
-  return book(input, { stepMin: 5, leadMin: 0 })
+  return book(input, { manual: true })
 }
 
 /**
@@ -78,17 +80,32 @@ export async function createPublicBooking(input: {
 
 async function book(
   input: NewAppointmentInput,
-  grid: { stepMin?: number; leadMin?: number; requireDeposit?: boolean }
-): Promise<Result<{ id: string; checkoutUrl?: string }>> {
+  grid: { stepMin?: number; leadMin?: number; requireDeposit?: boolean; manual?: boolean }
+): Promise<Result<{ id: string; checkoutUrl?: string; warnings?: string[] }>> {
   if (!validDay(input.day) || !validTime(input.time)) return { ok: false, error: "Fecha u hora inválidas." }
   const s = await db()
   const service = s.services.find((x) => x.id === input.serviceId && x.active)
   const staff = s.staff.find((x) => x.id === input.staffId && x.active)
   if (!service || !staff) return { ok: false, error: "Elegí servicio y barbero." }
 
-  // El panel pasa su propia grilla (cada 5 min); la web pública usa la del local (Ajustes).
-  const slots = freeSlots({ day: input.day, service, staff, appointments: s.appointments, ...grid, stepMin: grid.stepMin ?? s.shopSettings.slotStepMin, now: await now() })
-  if (!slots.includes(input.time)) return { ok: false, error: `${staff.name} no tiene libre ese horario. Elegí otro.` }
+  // La duración es la del servicio, salvo en los turnos que carga el equipo a
+  // mano: ahí puede ser otra (un corte de 45', uno de 30'…).
+  let duration = service.durationMin
+  let warnings: string[] = []
+  if (grid.manual) {
+    duration = input.durationMin === undefined ? service.durationMin : Math.round(Number(input.durationMin))
+    if (!Number.isFinite(duration) || duration < 5 || duration > 240) return { ok: false, error: "Revisá la duración: entre 5 y 240 minutos." }
+    // El equipo manda en su local: cualquier hora, cualquier duración. Sólo se frena lo
+    // imposible (local cerrado, pisar a otro cliente) y se AVISA lo discutible
+    // (fuera del horario del barbero, franco, turno fijo).
+    const check = checkManualBooking({ day: input.day, time: input.time, durationMin: duration, service, staff, appointments: s.appointments, now: await now() })
+    if (!check.ok) return { ok: false, error: check.error }
+    warnings = check.warnings
+  } else {
+    // La web pública (y el agente) sólo ofrecen lo que calcula `freeSlots`, con la grilla del local (Ajustes).
+    const slots = freeSlots({ day: input.day, service, staff, appointments: s.appointments, ...grid, stepMin: grid.stepMin ?? s.shopSettings.slotStepMin, now: await now() })
+    if (!slots.includes(input.time)) return { ok: false, error: `${staff.name} no tiene libre ese horario. Elegí otro.` }
+  }
 
   const name = input.newClient?.name.trim()
   if (!input.clientId && !name) return { ok: false, error: "Falta el nombre del cliente." }
@@ -106,7 +123,7 @@ async function book(
         staffId: staff.id,
         serviceId: service.id,
         startsAt: start.toISOString(),
-        endsAt: new Date(start.getTime() + service.durationMin * 60_000).toISOString(),
+        endsAt: new Date(start.getTime() + duration * 60_000).toISOString(),
         status: useDeposit ? "pendiente" : "confirmado",
         source: input.source ?? "panel",
         price: service.price,
@@ -119,7 +136,7 @@ async function book(
         : { name: name!, phone: input.newClient?.phone?.trim() || null, channel: "whatsapp", notes: null, preferredStaffId: staff.id },
     })
     refresh()
-    if (!useDeposit) return { ok: true, data: { id: appointmentId } }
+    if (!useDeposit) return { ok: true, data: { id: appointmentId, warnings } }
 
     const checkoutUrl = await startDepositCheckout({
       appointmentId,
@@ -211,26 +228,26 @@ export async function chargeAppointment(input: {
 }
 
 /**
- * Cobro rápido: alguien que cae sin turno (caminando). Crea el turno YA
- * completado (origen `walk_in`) y lo cobra en el mismo paso, así queda
- * registrado en la agenda, la caja, la comisión del barbero y la fidelidad —
- * lo mismo que si hubiera pasado por WhatsApp. Sin esto, un corte cobrado
- * "de una" no deja rastro en ningún lado.
- */
-/**
  * Turno rápido: cae alguien de golpe y hay que anotarlo sin perder tiempo.
- * Nombre + servicio + barbero, y arranca YA (o apenas termine el turno que
- * ese barbero tiene en curso). Se cobra después desde Caja, como cualquier
- * otro turno: a diferencia de `quickCharge`, acá no se toca la plata.
+ * Nombre + servicio + barbero, y por defecto arranca YA (o apenas termine el
+ * turno que ese barbero tiene en curso). Se puede elegir otra duración (un
+ * corte de 30', de 45') o una hora puntual de hoy ("a las 17:15"). Se cobra
+ * después desde Caja, como cualquier otro turno: a diferencia de `quickCharge`,
+ * acá no se toca la plata.
  *
  * Es el equipo del local quien decide atender a alguien fuera de agenda, así
- * que no consulta francos ni turnos fijos: sólo evita pisar a otro cliente.
+ * que no consulta francos ni turnos fijos ni el horario del barbero: sólo
+ * evita pisar a otro cliente y respeta el horario del local.
  */
 export async function quickAppointment(input: {
   staffId: string
   serviceId: string
   clientId?: string
   name?: string
+  /** Minutos que dura. Por defecto, lo que dura el servicio. */
+  durationMin?: number
+  /** "HH:MM" de hoy. Sin esto: ahora, o apenas el barbero termine lo que tiene. */
+  time?: string
 }): Promise<Result<{ startsAt: string; waitMin: number; staffName: string }>> {
   await assertPanelSession()
   const s = await db()
@@ -243,23 +260,35 @@ export async function quickAppointment(input: {
     return { ok: false, error: "Poné el nombre del cliente." }
   }
 
+  const durationMin = input.durationMin === undefined ? service.durationMin : Math.round(Number(input.durationMin))
+  if (!Number.isFinite(durationMin) || durationMin < 5 || durationMin > 240) return { ok: false, error: "Revisá la duración: entre 5 y 240 minutos." }
+
   const n = await now()
   const ONE_MIN = 60_000
-  // Si el barbero está con alguien, este turno arranca cuando termine (y así
-  // encadenado, si ya tenía el siguiente pegado).
-  const busy = s.appointments
-    .filter((a) => a.staffId === staff.id && ["pendiente", "confirmado", "en_curso", "completado"].includes(a.status))
-    .map((a) => [new Date(a.startsAt).getTime(), new Date(a.endsAt).getTime()] as const)
-    .sort((a, b) => a[0] - b[0])
+  const duration = durationMin * ONE_MIN
   let start = n.getTime()
-  const duration = service.durationMin * ONE_MIN
-  for (const [from, to] of busy) {
-    if (start < to && start + duration > from) start = to
+
+  if (input.time !== undefined) {
+    // Hora puntual de hoy: se respeta tal cual (sólo se frena lo imposible).
+    if (!validTime(input.time)) return { ok: false, error: "Revisá la hora." }
+    const check = checkManualBooking({ day: dayKey(n), time: input.time, durationMin, service, staff, appointments: s.appointments, now: n, pastGraceMin: 60 })
+    if (!check.ok) return { ok: false, error: check.error }
+    start = at(dayKey(n), input.time).getTime()
+  } else {
+    // Si el barbero está con alguien, este turno arranca cuando termine (y así
+    // encadenado, si ya tenía el siguiente pegado).
+    const busy = s.appointments
+      .filter((a) => a.staffId === staff.id && ["pendiente", "confirmado", "en_curso", "completado"].includes(a.status))
+      .map((a) => [new Date(a.startsAt).getTime(), new Date(a.endsAt).getTime()] as const)
+      .sort((a, b) => a[0] - b[0])
+    for (const [from, to] of busy) {
+      if (start < to && start + duration > from) start = to
+    }
+    if (Math.round((start - n.getTime()) / ONE_MIN) > 180) {
+      return { ok: false, error: `${staff.name} está ocupado por un buen rato. Probá con otro barbero o agendalo a una hora.` }
+    }
   }
   const waitMin = Math.max(0, Math.round((start - n.getTime()) / ONE_MIN))
-  if (waitMin > 180) {
-    return { ok: false, error: `${staff.name} está ocupado por un buen rato. Probá con otro barbero o agendalo a una hora.` }
-  }
 
   try {
     await store().createAppointment({
@@ -269,7 +298,8 @@ export async function quickAppointment(input: {
         serviceId: service.id,
         startsAt: new Date(start).toISOString(),
         endsAt: new Date(start + duration).toISOString(),
-        status: waitMin === 0 ? "en_curso" : "confirmado",
+        // Ya empezó (o empieza en el minuto): en curso. Si es más tarde, queda confirmado.
+        status: start <= n.getTime() + ONE_MIN ? "en_curso" : "confirmado",
         source: "walk_in",
         price: service.price,
         notes: null,
@@ -288,6 +318,13 @@ export async function quickAppointment(input: {
   return { ok: true, data: { startsAt: new Date(start).toISOString(), waitMin, staffName: staff.name } }
 }
 
+/**
+ * Cobro rápido: alguien que cae sin turno (caminando). Crea el turno YA
+ * completado (origen `walk_in`) y lo cobra en el mismo paso, así queda
+ * registrado en la agenda, la caja, la comisión del barbero y la fidelidad —
+ * lo mismo que si hubiera pasado por WhatsApp. Sin esto, un corte cobrado
+ * "de una" no deja rastro en ningún lado.
+ */
 export async function quickCharge(input: {
   staffId: string
   serviceId: string

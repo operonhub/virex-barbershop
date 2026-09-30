@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { expandFixedSlots, fixedSlotsOn, pendingFixedSlots } from "./fixed-slots"
+import { expandFixedSlots, fixedSlotsClash, fixedSlotsOn, pendingFixedSlots } from "./fixed-slots"
 import { freeSlots } from "./slots"
 import { at } from "@/lib/time"
 import type { Appointment, FixedSlot } from "./types"
@@ -50,10 +50,40 @@ describe("turnos fijos que todavía nadie ocupó", () => {
     expect(pendingFixedSlots([fijo], [appt("seba", "18:10", "19:10", "en_curso")])).toEqual([])
   })
 
+  it("si un turno real sólo lo roza, el fijo se sigue mostrando (es un choque que hay que ver)", () => {
+    // 16:35 a 17:35 contra un fijo de 18:00 a 19:00: no se tocan. Contra 17:15 a 18:00: 20 de 45 minutos.
+    const f = slot({ start: "17:15", end: "18:00" })
+    expect(pendingFixedSlots([f], [appt("seba", "16:35", "17:35")])).toHaveLength(1)
+    expect(pendingFixedSlots([f], [appt("seba", "17:10", "18:10")])).toEqual([]) // lo cubre entero
+  })
+
   it("un turno de otro barbero, o en otro horario, o cancelado, no lo tapa", () => {
     expect(pendingFixedSlots([fijo], [appt("nemo", "18:00", "19:00")])).toHaveLength(1)
     expect(pendingFixedSlots([fijo], [appt("seba", "16:00", "17:00")])).toHaveLength(1)
     expect(pendingFixedSlots([fijo], [appt("seba", "18:00", "19:00", "cancelado")])).toHaveLength(1)
+  })
+})
+
+describe("turnos fijos que se pisan", () => {
+  const f = (over: Partial<FixedSlot>) => slot({ start: "17:00", end: "17:45", ...over })
+
+  it("dos del mismo barbero y día que comparten minutos se pisan", () => {
+    expect(fixedSlotsClash(f({}), f({ start: "17:30", end: "18:15" }))).toBe(true)
+  })
+
+  it("pegados (uno termina cuando empieza el otro) no se pisan", () => {
+    expect(fixedSlotsClash(f({}), f({ start: "17:45", end: "18:30" }))).toBe(false)
+  })
+
+  it("otro barbero, o otro día, no se pisan", () => {
+    expect(fixedSlotsClash(f({}), f({ staffId: "nemo" }))).toBe(false)
+    expect(fixedSlotsClash(f({}), f({ weekday: 3 }))).toBe(false)
+  })
+
+  it("uno de un día pisa al semanal si cae ese día de la semana", () => {
+    // 2026-09-29 es martes; el semanal es de los martes.
+    expect(fixedSlotsClash(f({}), f({ weekday: null, onDate: "2026-09-29" }))).toBe(true)
+    expect(fixedSlotsClash(f({}), f({ weekday: null, onDate: "2026-09-30" }))).toBe(false) // miércoles
   })
 })
 
