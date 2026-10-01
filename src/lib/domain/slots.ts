@@ -203,19 +203,60 @@ export function checkManualBooking(q: ManualBookingQuery): ManualBookingCheck {
   return { ok: true, warnings }
 }
 
-/** Para "con cualquiera": el primer barbero libre en cada horario. */
+/** Para "con cualquiera": reparte entre los libres según la carga real del día. */
 export function freeSlotsAnyStaff(
   query: Omit<SlotQuery, "staff"> & { staff: Pick<Staff, "id" | "skipsServiceIds" | "schedule" | "timeOff">[] }
 ): { time: string; staffId: string }[] {
-  const byTime = new Map<string, string>()
+  const byTime = new Map<string, string[]>()
   for (const member of query.staff) {
     for (const time of freeSlots({ ...query, staff: member })) {
-      if (!byTime.has(time)) byTime.set(time, member.id)
+      byTime.set(time, [...(byTime.get(time) ?? []), member.id])
     }
   }
+  const minutesBooked = new Map(query.staff.map((member) => [
+    member.id,
+    query.appointments
+      .filter((a) => a.staffId === member.id && BLOCKING.has(a.status) && dayKey(a.startsAt) === query.day)
+      .reduce((sum, a) => sum + (new Date(a.endsAt).getTime() - new Date(a.startsAt).getTime()) / 60_000, 0),
+  ]))
+  const ids = query.staff.map((s) => s.id).sort()
   return [...byTime.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([time, staffId]) => ({ time, staffId }))
+    .map(([time, available]) => {
+      const offset = (Number(query.day.replaceAll("-", "")) + Math.floor(hmToMinutes(time) / (query.stepMin ?? BRAND.booking.slotStepMin))) % ids.length
+      const staffId = available.sort((a, b) =>
+        (minutesBooked.get(a) ?? 0) - (minutesBooked.get(b) ?? 0) ||
+        ((ids.indexOf(a) - offset + ids.length) % ids.length) - ((ids.indexOf(b) - offset + ids.length) % ids.length)
+      )[0]
+      return { time, staffId }
+    })
+}
+
+/** Un traslado manual conserva la hora y duración exactas del turno. */
+export function checkStaffTransfer({ appointment, staff, service, appointments, now }: {
+  appointment: Appointment
+  staff: Staff
+  service: Pick<Service, "id">
+  appointments: Appointment[]
+  now: Date
+}): ManualBookingCheck {
+  if (appointment.staffId === staff.id) return { ok: false, error: "El turno ya está con ese barbero." }
+  if (!["pendiente", "confirmado"].includes(appointment.status) || new Date(appointment.startsAt) <= now) {
+    return { ok: false, error: "Sólo se puede pasar un turno que todavía no empezó." }
+  }
+  if (!staff.active) return { ok: false, error: `${staff.name} no está activo.` }
+  const check = checkManualBooking({
+    day: dayKey(appointment.startsAt),
+    time: minutesToHm(minutesOfDay(appointment.startsAt)),
+    durationMin: (new Date(appointment.endsAt).getTime() - new Date(appointment.startsAt).getTime()) / 60_000,
+    service,
+    staff,
+    appointments: appointments.filter((a) => a.id !== appointment.id),
+    now,
+  })
+  if (!check.ok) return check
+  if (check.warnings.length) return { ok: false, error: check.warnings[0] }
+  return check
 }
 
 export function endOf(day: string, time: string, durationMin: number): Date {

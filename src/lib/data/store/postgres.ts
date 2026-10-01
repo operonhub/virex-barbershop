@@ -329,14 +329,34 @@ export const postgresStore: Store = {
     }
   },
 
+  async reassignAppointment(id, staffId) {
+    const sql = sqlClient()
+    try {
+      return await sql.begin(async (tx) => {
+        const rows = await tx`select id, status, starts_at from appointments where id = ${id} for update`
+        if (!rows.length || !["pendiente", "confirmado"].includes(rows[0].status as string) ||
+          new Date(rows[0].starts_at as Date) <= new Date()) return false
+        const charged = await tx`select 1 from payments where appointment_id = ${id} and kind = 'servicio' limit 1`
+        if (charged.length) return false
+        await tx`update appointments set staff_id = ${staffId} where id = ${id}`
+        await tx`update payments set staff_id = ${staffId} where appointment_id = ${id} and kind = 'sena'`
+        return true
+      })
+    } catch (e) {
+      if (code(e) === "23P01") throw new SlotTakenError()
+      throw e
+    }
+  },
+
   async chargeAppointment(appointmentId, p) {
     const sql = sqlClient()
     try {
       await sql.begin(async (tx) => {
+        const [appointment] = await tx`select staff_id from appointments where id = ${appointmentId} for update`
         await tx`
           insert into payments (appointment_id, client_id, staff_id, service_id, concept, kind, list_price, discount,
                                 discount_reason, tip, amount, method, paid_at, external_ref)
-          values (${appointmentId}, ${p.clientId}, ${p.staffId}, ${p.serviceId}, ${p.concept}, ${p.kind}, ${p.listPrice},
+          values (${appointmentId}, ${p.clientId}, ${appointment.staff_id}, ${p.serviceId}, ${p.concept}, ${p.kind}, ${p.listPrice},
                   ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt}, ${p.externalRef ?? null})`
         await tx`update appointments set status = 'completado' where id = ${appointmentId}`
       })
@@ -350,15 +370,18 @@ export const postgresStore: Store = {
     const sql = sqlClient()
     // Sin especificar el conflicto: cubre las dos reglas a la vez (un turno,
     // una sola seña; un pago de MP, un solo registro).
-    const rows = await sql`
-      insert into payments (appointment_id, client_id, staff_id, service_id, concept, kind, list_price, discount,
-                            discount_reason, tip, amount, method, paid_at, external_ref)
-      values (${appointmentId}, ${p.clientId}, ${p.staffId}, ${p.serviceId}, ${p.concept}, 'sena', ${p.listPrice},
-              ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt}, ${p.externalRef ?? null})
-      on conflict do nothing
-      returning id`
-    if (rows.length) await sql`update appointments set status = 'confirmado' where id = ${appointmentId} and status = 'pendiente'`
-    return { inserted: rows.length > 0 }
+    return sql.begin(async (tx) => {
+      const [appointment] = await tx`select staff_id from appointments where id = ${appointmentId} for update`
+      const rows = await tx`
+        insert into payments (appointment_id, client_id, staff_id, service_id, concept, kind, list_price, discount,
+                              discount_reason, tip, amount, method, paid_at, external_ref)
+        values (${appointmentId}, ${p.clientId}, ${appointment.staff_id}, ${p.serviceId}, ${p.concept}, 'sena', ${p.listPrice},
+                ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt}, ${p.externalRef ?? null})
+        on conflict do nothing
+        returning id`
+      if (rows.length) await tx`update appointments set status = 'confirmado' where id = ${appointmentId} and status = 'pendiente'`
+      return { inserted: rows.length > 0 }
+    })
   },
 
   async addExpense(e) {

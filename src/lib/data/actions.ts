@@ -8,7 +8,7 @@ import { deliverToChannel } from "@/lib/zernio/deliver"
 import { startDepositCheckout } from "@/lib/mercadopago/deposit"
 import { at, dayKey } from "@/lib/time"
 import { formatARS } from "@/lib/money"
-import { checkManualBooking, earlyFinishEnd, freeSlots, placeFinishedWalkIn } from "@/lib/domain/slots"
+import { checkManualBooking, checkStaffTransfer, earlyFinishEnd, freeSlots, placeFinishedWalkIn } from "@/lib/domain/slots"
 import { loyaltyDiscount, loyaltyStatus } from "@/lib/domain/loyalty"
 import type {
   AgentSettings,
@@ -177,6 +177,36 @@ export async function setAppointmentStatus(id: string, status: AppointmentStatus
     if (status === "completado") await releaseIfFinishedEarly(current, await now())
   } catch (e) {
     if (e instanceof SlotTakenError) return { ok: false, error: "Ese horario ya lo ocupa otro turno: no se puede reactivar." }
+    throw e
+  }
+  refresh()
+  return { ok: true }
+}
+
+/** Desde la ficha de Agenda: conserva horario y servicio, y revalida antes de escribir. */
+export async function reassignAppointment(id: string, staffId: string): Promise<Result> {
+  await assertPanelSession()
+  const s = await db()
+  const appointment = s.appointments.find((a) => a.id === id)
+  const member = s.staff.find((m) => m.id === staffId)
+  if (!appointment || !member) return { ok: false, error: "No encontré el turno o el barbero." }
+  if (s.payments.some((p) => p.appointmentId === id && p.kind === "servicio")) {
+    return { ok: false, error: "Este turno ya fue cobrado; no se puede cambiar el barbero." }
+  }
+  const check = checkStaffTransfer({
+    appointment,
+    staff: member,
+    service: { id: appointment.serviceId },
+    appointments: s.appointments,
+    now: await now(),
+  })
+  if (!check.ok) return { ok: false, error: check.error }
+  try {
+    if (!await store().reassignAppointment(id, staffId)) {
+      return { ok: false, error: "El turno cambió mientras lo editabas. Actualizá la agenda y probá de nuevo." }
+    }
+  } catch (e) {
+    if (e instanceof SlotTakenError) return { ok: false, error: `${member.name} acaba de ocupar ese horario. Elegí otro barbero.` }
     throw e
   }
   refresh()

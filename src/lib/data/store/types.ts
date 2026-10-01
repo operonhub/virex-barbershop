@@ -131,6 +131,9 @@ export interface Store {
   /** Lanza SlotTakenError si el nuevo horario choca. */
   updateAppointment(id: string, patch: AppointmentPatch): Promise<void>
 
+  /** Mueve un turno aún no iniciado y su seña al nuevo barbero en una sola transacción. */
+  reassignAppointment(id: string, staffId: string): Promise<boolean>
+
   /** Registra el cobro y deja el turno completado, juntos. Lanza AlreadyChargedError. */
   chargeAppointment(appointmentId: string, payment: NewPayment): Promise<void>
 

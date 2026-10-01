@@ -92,11 +92,25 @@ export const memoryStore: Store = {
     Object.assign(appt, patch)
   },
 
+  async reassignAppointment(id, staffId) {
+    const s = state()
+    const appt = s.appointments.find((a) => a.id === id)
+    const n = s.simulated ? new Date(s.now) : new Date()
+    if (!appt || !["pendiente", "confirmado"].includes(appt.status) || new Date(appt.startsAt) <= n ||
+      s.payments.some((p) => p.appointmentId === id && p.kind === "servicio")) return false
+    if (overlaps(s, staffId, appt.startsAt, appt.endsAt, id)) throw new SlotTakenError()
+    appt.staffId = staffId
+    for (const payment of s.payments) {
+      if (payment.appointmentId === id && payment.kind === "sena") payment.staffId = staffId
+    }
+    return true
+  },
+
   async chargeAppointment(appointmentId, payment) {
     const s = state()
     if (s.payments.some((p) => p.appointmentId === appointmentId && p.kind === "servicio")) throw new AlreadyChargedError()
-    s.payments.push({ ...payment, id: newId("co") })
     const appt = s.appointments.find((a) => a.id === appointmentId)
+    s.payments.push({ ...payment, staffId: appt?.staffId ?? payment.staffId, id: newId("co") })
     if (appt) appt.status = "completado"
   },
 
@@ -106,8 +120,8 @@ export const memoryStore: Store = {
       (p) => (p.appointmentId === appointmentId && p.kind === "sena") || (payment.externalRef && p.externalRef === payment.externalRef)
     )
     if (dup) return { inserted: false }
-    s.payments.push({ ...payment, id: newId("co"), kind: "sena" })
     const appt = s.appointments.find((a) => a.id === appointmentId)
+    s.payments.push({ ...payment, staffId: appt?.staffId ?? payment.staffId, id: newId("co"), kind: "sena" })
     if (appt?.status === "pendiente") appt.status = "confirmado"
     return { inserted: true }
   },

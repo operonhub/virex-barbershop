@@ -7,11 +7,11 @@ import { Bot, Footprints, MessageCircle, Phone, Pin, Scissors, Sparkles, StickyN
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { BRAND } from "@/config/brand"
-import { setAppointmentStatus } from "@/lib/data/actions"
+import { reassignAppointment, setAppointmentStatus } from "@/lib/data/actions"
 import { formatARS } from "@/lib/money"
 import { dayKey, formatDayShort, hm, hmToMinutes, minutesOfDay, minutesToHm } from "@/lib/time"
 import { cn } from "@/lib/utils"
-import { offHoursFor } from "@/lib/domain/slots"
+import { checkStaffTransfer, offHoursFor } from "@/lib/domain/slots"
 import { useNewAppointment } from "./new-appointment"
 import { SOURCE_LABEL, StatusPill } from "./status"
 import { ChargeDialog } from "@/components/caja/charge-dialog"
@@ -247,6 +247,9 @@ export function DayGrid({
         service={selected ? serviceOf(selected.serviceId) : undefined}
         client={selected ? clientOf(selected.clientId) : undefined}
         staff={selected ? staff.find((s) => s.id === selected.staffId) : undefined}
+        allStaff={staff}
+        appointments={appointments}
+        now={now}
         loyalty={selected ? loyalty[selected.clientId] : undefined}
         paid={selected ? paid.has(selected.id) : false}
         onClose={() => setSelectedId(null)}
@@ -277,6 +280,9 @@ function AppointmentSheet({
   service,
   client,
   staff,
+  allStaff,
+  appointments,
+  now,
   loyalty,
   paid,
   onClose,
@@ -286,12 +292,33 @@ function AppointmentSheet({
   service: Service | undefined
   client: Client | undefined
   staff: Staff | undefined
+  allStaff: Staff[]
+  appointments: Appointment[]
+  now: string
   loyalty: LoyaltyStatus | undefined
   paid: boolean
   onClose: () => void
   onCharge: (id: string) => void
 }) {
   const [pending, startTransition] = useTransition()
+  const transfers = a && ["pendiente", "confirmado"].includes(a.status) && new Date(a.startsAt) > new Date(now)
+    ? allStaff.filter((member) => member.id !== a.staffId).map((member) => ({
+        member,
+        check: checkStaffTransfer({ appointment: a, staff: member, service: { id: a.serviceId }, appointments, now: new Date(now) }),
+      }))
+    : []
+
+  function transfer(staffId: string, name: string) {
+    if (!a) return
+    startTransition(async () => {
+      const res = await reassignAppointment(a.id, staffId)
+      if (!res.ok) toast.error(res.error)
+      else {
+        toast.success(`Turno pasado a ${name}. Avisale al cliente si esperaba a otro barbero.`)
+        onClose()
+      }
+    })
+  }
 
   function move(status: AppointmentStatus, message: string) {
     if (!a) return
@@ -365,6 +392,25 @@ function AppointmentSheet({
                 </div>
               )}
               {a.notes && <p className="text-[13px] text-ivory-2">{a.notes}</p>}
+
+              {transfers.length > 0 && (
+                <section className="rounded-xl border border-line bg-surface-2 px-4 py-3" aria-label="Pasar turno a otro barbero">
+                  <p className="text-[13px] font-medium text-ivory">Pasar a otro barbero</p>
+                  <p className="mt-1 text-[12px] text-ivory-3">Misma hora y servicio. Si el cliente pidió a alguien en particular, avisale antes de cambiarlo.</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {transfers.map(({ member, check }) => (
+                      <Button key={member.id} type="button" variant="outline" disabled={pending || !check.ok}
+                        title={check.ok ? `Pasar a ${member.name}` : check.error}
+                        onClick={() => transfer(member.id, member.name)}>
+                        {member.name}
+                      </Button>
+                    ))}
+                  </div>
+                  {transfers.every(({ check }) => !check.ok) && (
+                    <p className="mt-2 text-[12px] text-ivory-3">No hay otro barbero libre y trabajando en esta franja.</p>
+                  )}
+                </section>
+              )}
 
               <div className="flex flex-wrap gap-2">
                 {client?.phone && (

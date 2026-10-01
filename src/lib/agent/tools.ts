@@ -81,14 +81,14 @@ export function toolDefinitions(services: Service[], staff: Staff[]): ToolSpec[]
     {
       name: "crear_turno",
       description:
-        "Agenda un turno confirmado. Sólo cuando el cliente ya eligió servicio, fecha, hora y barbero. Si no es cliente registrado, pasá su nombre y teléfono.",
+        "Agenda un turno confirmado. Sólo cuando el cliente ya eligió servicio, fecha y hora. Usá barbero_id 'cualquiera' si no pidió uno por nombre: el sistema reparte entre los libres. Si no es cliente registrado, pasá su nombre y teléfono.",
       parameters: {
         type: "object",
         properties: {
           fecha: DATE,
           hora: TIME,
           servicio_id: { type: "string", enum: serviceIds },
-          barbero_id: { type: "string", enum: staffIds },
+          barbero_id: { type: "string", enum: [...staffIds, "cualquiera"] },
           nombre_cliente: { type: "string", description: "Nombre y apellido si se conoce." },
           telefono: { type: "string", description: "Teléfono del cliente, o cadena vacía si no se sabe." },
         },
@@ -210,7 +210,12 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
     case "crear_turno": {
       if (!perms.book) return fail("El dueño no habilitó que el agente agende. Derivá a una persona.")
       const svc = service(input.servicio_id)
-      const m = member(input.barbero_id)
+      const anyStaff = input.barbero_id === "cualquiera"
+      const chosen = anyStaff && svc && validDay(input.fecha) && typeof input.hora === "string"
+        ? freeSlotsAnyStaff({ day: input.fecha, service: svc, staff: s.staff.filter((x) => x.active), appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin })
+            .find((slot) => slot.time === input.hora)?.staffId
+        : null
+      const m = member(chosen ?? input.barbero_id)
       if (!svc || !m || !validDay(input.fecha) || typeof input.hora !== "string") return fail("Datos del turno inválidos.")
       if (!clientAgreedTo(input.hora, ctx.history ?? [])) return fail(NOT_AGREED)
       const free = freeSlots({ day: input.fecha, service: svc, staff: m, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin })
@@ -261,7 +266,7 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
                 phone: String(input.telefono || "").replace(/[^\d+]/g, "") || null,
                 channel: ctx.channel,
                 notes: "Creado por el agente IA.",
-                preferredStaffId: m.id,
+                preferredStaffId: anyStaff ? null : m.id,
               },
           linkConversationId: ctx.conversationId,
         })

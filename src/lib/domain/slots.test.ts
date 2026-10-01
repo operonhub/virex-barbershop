@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { checkManualBooking, earlyFinishEnd, freeSlots, isOpen, offHoursFor, placeFinishedWalkIn, worksOn } from "./slots"
+import { checkManualBooking, checkStaffTransfer, earlyFinishEnd, freeSlots, freeSlotsAnyStaff, isOpen, offHoursFor, placeFinishedWalkIn, worksOn } from "./slots"
 import { at } from "@/lib/time"
-import type { Appointment } from "./types"
+import type { Appointment, Staff } from "./types"
 
 // Viernes 18/09/2026 (Virex abre martes a sábado, 11 a 20).
 const DAY = "2026-09-18"
@@ -17,6 +17,51 @@ const appt = (from: string, to: string, status: Appointment["status"] = "confirm
 })
 
 const early = new Date("2026-09-17T12:00:00-03:00")
+
+describe("asignación cuando el cliente dice con cualquiera", () => {
+  const staff = ["st-santi", "st-seba", "st-nemo"].map((id) => ({ id, skipsServiceIds: [] as string[] }))
+  const base = { day: DAY, service: { id: "sv-corte", durationMin: 60 }, staff, appointments: [] as Appointment[], now: early, stepMin: 60 }
+
+  it("rota las primeras horas libres en lugar de darle todas al primer barbero", () => {
+    const slots = freeSlotsAnyStaff(base)
+    expect(new Set(slots.slice(0, 3).map((slot) => slot.staffId)).size).toBe(3)
+  })
+
+  it("prioriza a quien tiene menos minutos ocupados ese día", () => {
+    const busy = { ...appt("11:00", "12:00"), staffId: "st-santi" }
+    const choice = freeSlotsAnyStaff({ ...base, appointments: [busy] }).find((slot) => slot.time === "12:00")
+    expect(choice?.staffId).not.toBe("st-santi")
+  })
+})
+
+describe("pasar un turno a otro barbero", () => {
+  const source = { ...appt("15:00", "16:00"), staffId: "st-santi" }
+  const target: Staff = {
+    id: "st-seba", name: "Sebastián", role: "barbero", commissionPct: 50, active: true,
+    skipsServiceIds: [], schedule: [{ weekday: 5, start: "11:00", end: "20:00" }], timeOff: [],
+  }
+  const check = (staff: Staff, appointments = [source]) => checkStaffTransfer({
+    appointment: source, staff, service: { id: "sv-corte" }, appointments, now: early,
+  })
+
+  it("permite conservar la hora si el otro barbero está libre", () => {
+    expect(check(target)).toEqual({ ok: true, warnings: [] })
+  })
+
+  it("frena choques con otros turnos", () => {
+    const busy = { ...appt("15:30", "16:30"), id: "otro", staffId: target.id }
+    expect(check(target, [source, busy]).ok).toBe(false)
+  })
+
+  it("frena un franco y un barbero que no atiende en esa franja", () => {
+    expect(check({ ...target, timeOff: [{ startsAt: at(DAY, "14:00").toISOString(), endsAt: at(DAY, "17:00").toISOString() }] }).ok).toBe(false)
+    expect(check({ ...target, schedule: [{ weekday: 5, start: "11:00", end: "14:00" }] }).ok).toBe(false)
+  })
+
+  it("frena servicios que el otro barbero no realiza", () => {
+    expect(check({ ...target, skipsServiceIds: ["sv-corte"] }).ok).toBe(false)
+  })
+})
 
 describe("freeSlots", () => {
   it("no ofrece nada los días cerrados", () => {

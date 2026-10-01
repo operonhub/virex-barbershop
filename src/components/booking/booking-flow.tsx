@@ -130,7 +130,7 @@ export function BookingFlow({
           <div>
             <p className="eyebrow mb-2">Con quién</p>
             <div className="flex flex-wrap gap-2">
-              {[{ id: "cualquiera", name: "El primero libre" }, ...available].map((m) => (
+              {[{ id: "cualquiera", name: "Cualquiera" }, ...available].map((m) => (
                 <button
                   key={m.id}
                   type="button"
