@@ -131,8 +131,18 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
   suma a la comisión, la fidelidad ni la caja del barbero.
 - `quickCharge` (`src/lib/data/actions.ts`) crea el turno YA completado (`source: "walk_in"`) y
   lo cobra en un solo paso — pantalla en `src/components/caja/quick-charge-dialog.tsx`, botón
-  "Cobro rápido" en Caja. Mismas reglas que un turno normal: fidelidad recalculada por el
-  servidor, `SlotTakenError` si ese barbero ya tiene algo agendado justo en ese momento.
+  "Cobro rápido" en Caja. Mismas reglas que un turno normal: fidelidad recalculada por el servidor.
+- **El corte YA se hizo, así que se registra TERMINANDO ahora, no empezando ahora.**
+  `placeFinishedWalkIn` (`domain/slots.ts`) lo ubica en el último hueco libre del barbero
+  (si el hueco es más chico que el servicio, el corte se acorta a él). Si el barbero estuvo
+  ocupado hasta hace más de una hora o no hay hueco de 10 minutos, NO inventa un horario: pide
+  "Cuándo fue" (`startedAt` + `durationMin`). Antes se registraba desde ahora hacia adelante y
+  chocaba con el turno que ya había empezado (el EXCLUDE lo rechazaba): no dejaba cobrar.
+- **Terminar antes libera el resto del horario.** `earlyFinishEnd`: al cobrar un turno, o al
+  marcarlo "completado" (botón "Terminó, cobro después" de la ficha), si terminó 5 minutos o
+  más antes de lo previsto, su `endsAt` se corta en ese momento. El turno completado sin
+  cobrar sigue en "Por cobrar". Sin esto, un turno de 12:30 a 13:30 terminado a las 13:00
+  ocupaba la silla hasta las 13:30.
 
 ## Reglas de negocio que no se rompen
 

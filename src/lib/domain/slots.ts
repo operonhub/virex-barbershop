@@ -143,6 +143,8 @@ export interface ManualBookingQuery {
   now?: Date
   /** Hoy, cuántos minutos hacia atrás se tolera (alguien que ya llegó y se está atendiendo). */
   pastGraceMin?: number
+  /** Registrar algo que YA pasó (un cobro rápido de un corte ya hecho): no se rechaza por estar en el pasado. */
+  allowPast?: boolean
 }
 
 export type ManualBookingCheck = { ok: true; warnings: string[] } | { ok: false; error: string }
@@ -158,7 +160,7 @@ const fmtRange = ([a, b]: [number, number]) => `${minutesToHm(a)} a ${minutesToH
  * fijo). Puede ser a cualquier minuto y con cualquier duración.
  */
 export function checkManualBooking(q: ManualBookingQuery): ManualBookingCheck {
-  const { day, time, durationMin, staff, service, appointments, now = new Date(), pastGraceMin = 30 } = q
+  const { day, time, durationMin, staff, service, appointments, now = new Date(), pastGraceMin = 30, allowPast = false } = q
   if (!isOpen(day)) return { ok: false, error: "El local está cerrado ese día." }
   if (staff.skipsServiceIds.includes(service.id)) return { ok: false, error: `${staff.name} no hace este servicio.` }
 
@@ -171,13 +173,15 @@ export function checkManualBooking(q: ManualBookingQuery): ManualBookingCheck {
     return { ok: false, error: `Ese turno queda fuera del horario del local (${BRAND.openingHours.open} a ${BRAND.openingHours.close}).` }
   }
   const today = dayKey(now)
-  if (day < today || (day === today && start < minutesOfDay(now) - pastGraceMin)) return { ok: false, error: "Ese horario ya pasó." }
+  if (!allowPast && (day < today || (day === today && start < minutesOfDay(now) - pastGraceMin))) return { ok: false, error: "Ese horario ya pasó." }
 
   const clash = appointments
     .filter((a) => a.staffId === staff.id && BLOCKING.has(a.status) && dayKey(a.startsAt) === day)
     .find((a) => start < minutesOfDay(a.endsAt) && end > minutesOfDay(a.startsAt))
   if (clash) {
-    return { ok: false, error: `${staff.name} ya tiene un turno de ${fmtRange([minutesOfDay(clash.startsAt), minutesOfDay(clash.endsAt)])}.` }
+    // Si el turno con el que choca ya empezó, lo más probable es que ya haya terminado y nadie lo cerró.
+    const hint = new Date(clash.startsAt).getTime() <= now.getTime() ? " Si ya terminó, cobralo o marcalo como terminado para liberar el horario." : ""
+    return { ok: false, error: `${staff.name} ya tiene un turno de ${fmtRange([minutesOfDay(clash.startsAt), minutesOfDay(clash.endsAt)])}.${hint}` }
   }
 
   const warnings: string[] = []
@@ -230,4 +234,77 @@ export function occupancy(appointments: Appointment[], staffCount: number, days:
     .filter((a) => BLOCKING.has(a.status) && openDays.includes(dayKey(a.startsAt)))
     .reduce((sum, a) => sum + (new Date(a.endsAt).getTime() - new Date(a.startsAt).getTime()) / 60000, 0)
   return Math.round((booked / capacity) * 100)
+}
+
+/**
+ * Dónde registrar un corte que YA se hizo (cobro rápido): terminando AHORA, en el
+ * último hueco libre del barbero. Antes se registraba como si empezara ahora y
+ * durara una hora hacia adelante, y chocaba con el turno que venía después (o
+ * con uno que ya había empezado), así que no se podía cobrar.
+ *
+ * El corte ocupa `durationMin` hacia atrás desde que terminó, pero se acorta si
+ * el hueco es más chico (el barbero había terminado otro turno hace 40 minutos).
+ * Devuelve null si no hay un hueco de al menos `minGapMin` que haya terminado
+ * hace menos de `maxAgoMin` minutos: "recién terminó" no puede ser un hueco de
+ * hace dos horas, y adivinar un horario ensucia los datos. En ese caso hay que
+ * indicar a qué hora fue.
+ */
+export function placeFinishedWalkIn(q: {
+  now: Date
+  durationMin: number
+  staffId: string
+  appointments: Appointment[]
+  lookbackMin?: number
+  minGapMin?: number
+  maxAgoMin?: number
+}): { startsAt: Date; endsAt: Date } | null {
+  const { now, durationMin, staffId, appointments, lookbackMin = 180, minGapMin = 10, maxAgoMin = 60 } = q
+  const MIN = 60_000
+  const day = dayKey(now)
+  if (!isOpen(day)) return null
+  const nowMs = Math.floor(now.getTime() / MIN) * MIN
+  const open = at(day, BRAND.openingHours.open).getTime()
+  const close = at(day, BRAND.openingHours.close).getTime()
+  const to = Math.min(nowMs, close)
+  const from = Math.max(nowMs - lookbackMin * MIN, open)
+  if (to - from < minGapMin * MIN) return null
+
+  // Lo ocupado del barbero dentro de la ventana, unido en tramos.
+  const busy = appointments
+    .filter((a) => a.staffId === staffId && BLOCKING.has(a.status))
+    .map((a) => [Math.max(new Date(a.startsAt).getTime(), from), Math.min(new Date(a.endsAt).getTime(), to)] as [number, number])
+    .filter(([s, e]) => e > s)
+    .sort((a, b) => a[0] - b[0])
+  const merged: [number, number][] = []
+  for (const [s, e] of busy) {
+    const last = merged.at(-1)
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e)
+    else merged.push([s, e])
+  }
+  // Huecos libres de la ventana, del más reciente al más viejo.
+  const gaps: [number, number][] = []
+  let cursor = from
+  for (const [s, e] of merged) {
+    if (s > cursor) gaps.push([cursor, s])
+    cursor = Math.max(cursor, e)
+  }
+  if (cursor < to) gaps.push([cursor, to])
+  const gap = gaps.reverse().find(([s, e]) => e - s >= minGapMin * MIN && e >= to - maxAgoMin * MIN)
+  if (!gap) return null
+  const end = gap[1]
+  const start = Math.max(gap[0], end - durationMin * MIN)
+  return { startsAt: new Date(start), endsAt: new Date(end) }
+}
+
+/**
+ * Si un turno terminó ANTES de lo previsto, a qué hora cortarlo: ahora. Así el
+ * resto de su horario queda libre para agendar. Devuelve null si no hay nada
+ * que liberar (todavía no empezó, o terminó a horario o más tarde).
+ */
+export function earlyFinishEnd(a: Pick<Appointment, "startsAt" | "endsAt">, now: Date, minSavedMin = 5, minDurationMin = 5): Date | null {
+  const MIN = 60_000
+  const n = Math.floor(now.getTime() / MIN) * MIN
+  if (n < new Date(a.startsAt).getTime() + minDurationMin * MIN) return null
+  if (n > new Date(a.endsAt).getTime() - minSavedMin * MIN) return null
+  return new Date(n)
 }

@@ -6,7 +6,9 @@ import { Banknote, CreditCard, Landmark, QrCode, Search, Sparkles, UserPlus, Wal
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { quickCharge } from "@/lib/data/actions"
+import { TimeSelect } from "@/components/forms/time-select"
 import { formatARS, METHOD_LABEL, METHODS } from "@/lib/money"
+import { hm, hmToMinutes, minutesToHm } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import { BRAND } from "@/config/brand"
 import type { LoyaltyStatus } from "@/lib/domain/loyalty"
@@ -20,6 +22,16 @@ const METHOD_ICON: Record<PaymentMethod, typeof Banknote> = {
   credito: Wallet,
 }
 const TIPS = [0, 1000, 2000, 3000]
+
+/** Duraciones para elegir: las comunes, más la del servicio si es otra. */
+const durationChoices = (serviceMin: number) => [...new Set([30, 45, 60, 90, serviceMin])].sort((a, b) => a - b)
+
+/** Una hora razonable para "empezó a las…": ahora menos lo que dura el corte, de 5 en 5 y dentro del horario del local. */
+function defaultStartedAt(durationMin: number) {
+  const [h, m] = hm(new Date()).split(":").map(Number)
+  const t = Math.floor((h * 60 + m - durationMin) / 5) * 5
+  return minutesToHm(Math.min(Math.max(t, hmToMinutes(BRAND.openingHours.open)), hmToMinutes(BRAND.openingHours.close) - 5))
+}
 
 type Step = "cliente" | "cobro"
 
@@ -54,6 +66,9 @@ export function QuickChargeDialog({
   const [serviceId, setServiceId] = useState(services.find((s) => s.active)?.id ?? "")
   const [method, setMethod] = useState<PaymentMethod>("efectivo")
   const [tip, setTip] = useState(0)
+  // El corte ya se hizo: "recién terminó" lo anota terminando ahora; si no, a qué hora empezó y cuánto duró.
+  const [startedAt, setStartedAt] = useState<string | null>(null)
+  const [durationOverride, setDurationOverride] = useState<number | null>(null)
   const [pending, startTransition] = useTransition()
 
   const matches = useMemo(() => {
@@ -63,6 +78,7 @@ export function QuickChargeDialog({
   }, [query, clients])
 
   const service = services.find((s) => s.id === serviceId)
+  const duration = durationOverride ?? service?.durationMin ?? 60
   const rewardStatus = client ? loyalty[client.id] : undefined
   const rewardAvailable = !!rewardStatus?.rewardReady && !!service?.countsForLoyalty
   const [useReward, setUseReward] = useState(false)
@@ -78,6 +94,8 @@ export function QuickChargeDialog({
     setMethod("efectivo")
     setTip(0)
     setUseReward(false)
+    setStartedAt(null)
+    setDurationOverride(null)
   }
 
   function pickClient(c: Client | null) {
@@ -97,9 +115,11 @@ export function QuickChargeDialog({
         method,
         tip,
         useReward: useReward && rewardAvailable,
+        durationMin: durationOverride ?? undefined,
+        startedAt: startedAt ?? undefined,
       })
       if (!res.ok) return void toast.error(res.error)
-      toast.success(`Cobrado ${formatARS(res.data!.amount)} · ${METHOD_LABEL[method]}`)
+      toast.success(`Cobrado ${formatARS(res.data!.amount)} · ${METHOD_LABEL[method]} · anotado de ${hm(res.data!.startsAt)} a ${hm(res.data!.endsAt)}`)
       onOpenChange(false)
       reset()
     })
@@ -222,6 +242,46 @@ export function QuickChargeDialog({
                     </button>
                   ))}
               </div>
+            </section>
+
+            <section>
+              <h3 className="eyebrow mb-2">Cuándo fue</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  aria-pressed={startedAt === null}
+                  onClick={() => setStartedAt(null)}
+                  className={cn("h-10 rounded-lg border px-4 text-[13px] font-medium transition-colors", startedAt === null ? "border-gold bg-gold/8 text-ivory" : "border-line bg-surface-2 text-ivory-2 hover:border-line-strong")}
+                >
+                  Recién terminó
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={startedAt !== null}
+                  onClick={() => setStartedAt(startedAt ?? defaultStartedAt(duration))}
+                  className={cn("h-10 rounded-lg border px-4 text-[13px] font-medium transition-colors", startedAt !== null ? "border-gold bg-gold/8 text-ivory" : "border-line bg-surface-2 text-ivory-2 hover:border-line-strong")}
+                >
+                  Empezó a las…
+                </button>
+                {startedAt !== null && <TimeSelect value={startedAt} onChange={setStartedAt} label="Hora en que empezó" to={minutesToHm(hmToMinutes(BRAND.openingHours.close) - 5)} className="h-10" />}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[12.5px] text-ivory-2">Duró</span>
+                {durationChoices(service?.durationMin ?? 60).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={m === duration}
+                    onClick={() => setDurationOverride(m === service?.durationMin ? null : m)}
+                    className={cn("num h-9 rounded-lg border px-3 text-[13px] font-medium transition-colors", m === duration ? "border-gold bg-gold/8 text-ivory" : "border-line bg-surface-2 text-ivory-2 hover:border-line-strong")}
+                  >
+                    {m} min
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[12px] text-ivory-3">
+                {startedAt === null ? "Se anota terminando ahora, en el hueco libre del barbero." : `Hoy, desde las ${startedAt}.`}
+              </p>
             </section>
 
             {rewardAvailable && (

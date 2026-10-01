@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { checkManualBooking, freeSlots, isOpen, offHoursFor, worksOn } from "./slots"
+import { checkManualBooking, earlyFinishEnd, freeSlots, isOpen, offHoursFor, placeFinishedWalkIn, worksOn } from "./slots"
 import { at } from "@/lib/time"
 import type { Appointment } from "./types"
 
@@ -221,5 +221,94 @@ describe("cuándo NO atiende un barbero (para marcarlo en la agenda)", () => {
   it("un día que no trabaja es todo el horario del local", () => {
     const s = { schedule: [{ weekday: 2, start: "11:00", end: "20:00" }] } // sólo los martes; DAY es viernes
     expect(view(offHoursFor(s, DAY))).toEqual(["11:00-20:00"])
+  })
+})
+
+describe("cobro rápido: dónde se registra un corte que ya se hizo", () => {
+  const hm = (d: Date) => new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false }).format(d)
+  const place = (appointments: Appointment[], nowHm: string, durationMin = 60, day = DAY) => {
+    const r = placeFinishedWalkIn({ now: at(day, nowHm), durationMin, staffId: "st-leo", appointments })
+    return r && `${hm(r.startsAt)}-${hm(r.endsAt)}`
+  }
+
+  it("con el barbero libre, el corte termina ahora y dura lo que dura el servicio", () => {
+    expect(place([], "12:35", 45)).toBe("11:50-12:35")
+  })
+
+  it("EL CASO DEL CLIENTE: Mirko a las 12:30 ya empezó; el corte rápido queda ANTES, terminando 12:30", () => {
+    expect(place([appt("12:30", "13:30")], "12:35")).toBe("11:30-12:30")
+  })
+
+  it("si el hueco es más chico que el servicio, el corte se acorta al hueco", () => {
+    expect(place([appt("11:00", "11:50"), appt("12:30", "13:30")], "12:35")).toBe("11:50-12:30")
+  })
+
+  it("si el barbero no tiene ningún hueco antes de ahora, no inventa uno: avisa (null)", () => {
+    expect(place([appt("11:00", "12:30"), appt("12:30", "13:30")], "12:35")).toBeNull()
+  })
+
+  it("un hueco de menos de 10 minutos no alcanza", () => {
+    expect(place([appt("11:00", "12:25"), appt("12:30", "13:30")], "12:35")).toBeNull()
+  })
+
+  it("un turno cancelado no ocupa lugar", () => {
+    expect(place([appt("11:00", "12:30", "cancelado")], "12:35", 45)).toBe("11:50-12:35")
+  })
+
+  it("si el barbero estuvo ocupado hasta hace un rato, no inventa un horario viejo: pide que se indique", () => {
+    // Hueco libre de 11:00 a 12:45, pero ya pasó más de una hora: "recién terminó" no encaja.
+    expect(place([appt("12:45", "14:00")], "14:05")).toBeNull()
+    // En cambio, un hueco que terminó hace 20 minutos sí vale.
+    expect(place([appt("12:45", "13:30")], "13:50", 30)).toBe("13:30-13:50")
+  })
+
+  it("no registra nada un día que el local está cerrado", () => {
+    expect(place([], "12:35", 60, "2026-09-20")).toBeNull() // domingo
+  })
+
+  it("después de la hora de cierre, el corte no se pasa de las 20:00", () => {
+    expect(place([], "21:10", 45)).toBe("19:15-20:00")
+  })
+
+  it("si se carga a mano \"fue a las 11:50\", se acepta aunque ya haya pasado (allowPast)", () => {
+    const seba = { id: "st-leo", name: "Seba", skipsServiceIds: [] as string[], schedule: undefined, timeOff: undefined as { startsAt: string; endsAt: string }[] | undefined }
+    const base = { day: DAY, time: "11:50", durationMin: 40, service: { id: "sv" }, staff: seba, appointments: [] as Appointment[], now: at(DAY, "12:35") }
+    expect(checkManualBooking(base).ok).toBe(false) // Nuevo turno: no deja cargar en el pasado
+    expect(checkManualBooking({ ...base, allowPast: true }).ok).toBe(true)
+  })
+})
+
+describe("terminar un turno antes de lo previsto libera el resto del horario", () => {
+  const a = { startsAt: at(DAY, "12:30").toISOString(), endsAt: at(DAY, "13:30").toISOString() }
+  const hm2 = (d: Date | null) => d && new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hour12: false }).format(d)
+
+  it("si termina a las 13:00 un turno de 12:30 a 13:30, se corta a las 13:00", () => {
+    expect(hm2(earlyFinishEnd(a, at(DAY, "13:00")))).toBe("13:00")
+  })
+
+  it("si terminó a horario o más tarde, no hay nada que liberar", () => {
+    expect(earlyFinishEnd(a, at(DAY, "13:27"))).toBeNull()
+    expect(earlyFinishEnd(a, at(DAY, "13:45"))).toBeNull()
+  })
+
+  it("si todavía no empezó (o acaba de empezar), no se acorta", () => {
+    expect(earlyFinishEnd(a, at(DAY, "12:00"))).toBeNull()
+    expect(earlyFinishEnd(a, at(DAY, "12:32"))).toBeNull()
+  })
+
+  it("un turno de otro día no se toca", () => {
+    expect(earlyFinishEnd(a, at("2026-09-19", "13:00"))).toBeNull()
+  })
+})
+
+describe("el aviso de choque sugiere cerrar el turno que ya empezó", () => {
+  const seba = { id: "st-leo", name: "Seba", skipsServiceIds: [] as string[], schedule: undefined, timeOff: undefined as { startsAt: string; endsAt: string }[] | undefined }
+  it("si el turno con el que choca ya empezó, dice cómo liberarlo", () => {
+    const r = checkManualBooking({ day: DAY, time: "13:00", durationMin: 30, service: { id: "sv" }, staff: seba, appointments: [appt("12:30", "13:30")], now: at(DAY, "12:50") })
+    expect(r.ok === false && r.error).toContain("cobralo o marcalo como terminado")
+  })
+  it("si todavía no empezó, no hace falta la pista", () => {
+    const r = checkManualBooking({ day: DAY, time: "13:00", durationMin: 30, service: { id: "sv" }, staff: seba, appointments: [appt("13:00", "14:00")], now: at(DAY, "12:00") })
+    expect(r.ok === false && r.error).not.toContain("cobralo")
   })
 })

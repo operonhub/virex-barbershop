@@ -187,6 +187,9 @@ en la Agenda y en Hoy** (bloque rayado hasta que un turno real lo ocupa).
 Nuevo turno y Turno rápido; duración elegible por turno. ✅ Horario del barbero con **varias franjas
 por día** (corte al mediodía) y el "no atiende" marcado en la Agenda y en Hoy. ✅ Los horarios que
 ofrecen el agente y la web se "pegan" al final de cada turno (sin huecos muertos).
+**Estado 01/10 (cobro y fin de turno):** ✅ El Cobro rápido registra el corte terminando ahora, en el hueco libre
+del barbero (ya no choca con el turno siguiente). ✅ Cobrar o terminar un turno antes de lo previsto libera
+el resto de su horario; botón "Terminó, cobro después".
 
 1. En `/reservar`: el turno se crea `pendiente` con `hold_expires_at` a 15 minutos, se crea
    una preferencia de Checkout Pro y se redirige al pago. El pendiente ya bloquea el horario

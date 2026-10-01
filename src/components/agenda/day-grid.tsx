@@ -402,6 +402,11 @@ function AppointmentSheet({
                   Cobrar
                 </Button>
               )}
+              {a.status === "en_curso" && (
+                <Button variant="outline" className="h-10 w-full" disabled={pending} onClick={() => move("completado", "Terminó: el horario que sobraba quedó libre y el cobro queda pendiente en Caja")}>
+                  Terminó, cobro después
+                </Button>
+              )}
               {["pendiente", "confirmado"].includes(a.status) && (
                 <div className="grid grid-cols-2 gap-2">
                   <Button variant="outline" disabled={pending} onClick={() => move("no_show", "Marcado como no vino")}>

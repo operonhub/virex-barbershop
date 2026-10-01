@@ -8,7 +8,7 @@ import { deliverToChannel } from "@/lib/zernio/deliver"
 import { startDepositCheckout } from "@/lib/mercadopago/deposit"
 import { at, dayKey } from "@/lib/time"
 import { formatARS } from "@/lib/money"
-import { checkManualBooking, freeSlots } from "@/lib/domain/slots"
+import { checkManualBooking, earlyFinishEnd, freeSlots, placeFinishedWalkIn } from "@/lib/domain/slots"
 import { loyaltyDiscount, loyaltyStatus } from "@/lib/domain/loyalty"
 import type {
   AgentSettings,
@@ -157,12 +157,24 @@ async function book(
   }
 }
 
+/**
+ * Si un turno terminó ANTES de lo previsto, se corta ahora y el resto de su
+ * horario queda libre para agendar. Sin esto, un turno de 12:30 a 13:30 que se
+ * termina a las 13:00 sigue ocupando la silla hasta las 13:30.
+ */
+async function releaseIfFinishedEarly(appt: { id: string; startsAt: string; endsAt: string }, n: Date) {
+  const end = earlyFinishEnd(appt, n)
+  if (end) await store().updateAppointment(appt.id, { endsAt: end.toISOString() })
+}
+
 export async function setAppointmentStatus(id: string, status: AppointmentStatus): Promise<Result> {
   await assertPanelSession()
   const s = await db()
-  if (!s.appointments.some((a) => a.id === id)) return { ok: false, error: "No encontré ese turno." }
+  const current = s.appointments.find((a) => a.id === id)
+  if (!current) return { ok: false, error: "No encontré ese turno." }
   try {
     await store().updateAppointment(id, { status })
+    if (status === "completado") await releaseIfFinishedEarly(current, await now())
   } catch (e) {
     if (e instanceof SlotTakenError) return { ok: false, error: "Ese horario ya lo ocupa otro turno: no se puede reactivar." }
     throw e
@@ -202,6 +214,7 @@ export async function chargeAppointment(input: {
   const depositPaid = s.payments.find((p) => p.appointmentId === appt.id && p.kind === "sena")?.amount ?? 0
   const listPrice = Math.max(0, service.price - depositPaid)
   const amount = listPrice - discount + tip
+  const n = await now()
 
   try {
     await store().chargeAppointment(appt.id, {
@@ -217,12 +230,13 @@ export async function chargeAppointment(input: {
       tip,
       amount,
       method: input.method,
-      paidAt: (await now()).toISOString(),
+      paidAt: n.toISOString(),
     })
   } catch (e) {
     if (e instanceof AlreadyChargedError) return { ok: false, error: "Ese turno ya está cobrado." }
     throw e
   }
+  await releaseIfFinishedEarly(appt, n)
   refresh()
   return { ok: true, data: { amount, discount } }
 }
@@ -333,7 +347,11 @@ export async function quickCharge(input: {
   method: PaymentMethod
   tip: number
   useReward: boolean
-}): Promise<Result<{ amount: number; discount: number }>> {
+  /** Cuánto duró el corte. Por defecto, lo que dura el servicio. */
+  durationMin?: number
+  /** "HH:MM" de hoy en que empezó, si no fue "recién". */
+  startedAt?: string
+}): Promise<Result<{ amount: number; discount: number; startsAt: string; endsAt: string }>> {
   await assertPanelSession()
   const s = await db()
   const service = s.services.find((x) => x.id === input.serviceId && x.active)
@@ -344,6 +362,32 @@ export async function quickCharge(input: {
   if (!input.clientId && !name) return { ok: false, error: "Falta el nombre del cliente." }
 
   const n = await now()
+  const durationMin = input.durationMin === undefined ? service.durationMin : Math.round(Number(input.durationMin))
+  if (!Number.isFinite(durationMin) || durationMin < 5 || durationMin > 240) return { ok: false, error: "Revisá la duración: entre 5 y 240 minutos." }
+
+  // El corte YA se hizo: se registra TERMINANDO ahora (o a la hora que se indique),
+  // en el hueco que el barbero tenía libre. Antes se registraba como algo que empieza
+  // ahora y dura una hora hacia adelante, y chocaba con el turno que venía después o
+  // con uno que ya había empezado: no dejaba cobrar.
+  let startsAt: Date
+  let endsAt: Date
+  if (input.startedAt !== undefined) {
+    if (!validTime(input.startedAt)) return { ok: false, error: "Revisá la hora." }
+    startsAt = at(dayKey(n), input.startedAt)
+    if (startsAt.getTime() > n.getTime()) return { ok: false, error: "Esa hora todavía no llegó." }
+    endsAt = new Date(Math.min(startsAt.getTime() + durationMin * 60_000, n.getTime())) // ya terminó: no puede terminar en el futuro
+    const spent = Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000)
+    if (spent < 5) return { ok: false, error: "Esa hora es muy reciente: el corte tiene que haber durado al menos 5 minutos." }
+    const check = checkManualBooking({ day: dayKey(n), time: input.startedAt, durationMin: spent, service, staff, appointments: s.appointments, now: n, allowPast: true })
+    if (!check.ok) return { ok: false, error: check.error }
+  } else {
+    const placed = placeFinishedWalkIn({ now: n, durationMin, staffId: staff.id, appointments: s.appointments })
+    if (!placed) {
+      return { ok: false, error: `No encuentro un hueco libre de ${staff.name} antes de ahora para registrar este corte. Indicá a qué hora fue, en "Cuándo fue".` }
+    }
+    ;({ startsAt, endsAt } = placed)
+  }
+
   let appointmentId: string
   let clientId: string
   try {
@@ -352,8 +396,8 @@ export async function quickCharge(input: {
         clientId: input.clientId,
         staffId: staff.id,
         serviceId: service.id,
-        startsAt: n.toISOString(),
-        endsAt: new Date(n.getTime() + service.durationMin * 60_000).toISOString(),
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
         status: "completado",
         source: "walk_in",
         price: service.price,
@@ -368,7 +412,7 @@ export async function quickCharge(input: {
     appointmentId = created.appointmentId
     clientId = created.clientId
   } catch (e) {
-    if (e instanceof SlotTakenError) return { ok: false, error: `${staff.name} ya tiene un turno justo ahora. Esperá que termine o cobralo desde su turno.` }
+    if (e instanceof SlotTakenError) return { ok: false, error: `${staff.name} ya tiene un turno en ese horario. Indicá otra hora en "Cuándo fue".` }
     throw e
   }
 
@@ -392,7 +436,7 @@ export async function quickCharge(input: {
     paidAt: n.toISOString(),
   })
   refresh()
-  return { ok: true, data: { amount, discount } }
+  return { ok: true, data: { amount, discount, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() } }
 }
 
 export async function addExpense(input: {
