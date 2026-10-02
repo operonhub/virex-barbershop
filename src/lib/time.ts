@@ -133,3 +133,17 @@ export function timeAgo(d: DateLike, now: Date = new Date()): string {
   const [, m, dd] = day.split("-")
   return `${dd}/${m}`
 }
+
+/** Lunes de la semana (lunes a domingo) a la que pertenece el día. */
+export function weekStart(day: string): string {
+  const wd = weekday(day) // 0 = domingo
+  return addDays(day, wd === 0 ? -6 : 1 - wd)
+}
+
+/** "13 – 19 de julio" / "28 de julio – 3 de agosto" */
+export function formatWeekRange(start: string): string {
+  const end = addDays(start, 6)
+  const dm = (d: string, withMonth: boolean) =>
+    new Intl.DateTimeFormat("es-AR", { timeZone: TZ, day: "numeric", ...(withMonth ? { month: "long" } : {}) }).format(at(d, "12:00"))
+  return monthKey(start) === monthKey(end) ? `${dm(start, false)} – ${dm(end, true)}` : `${dm(start, true)} – ${dm(end, true)}`
+}

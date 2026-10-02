@@ -13,7 +13,7 @@ await db.exec(`
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
   create role anon; create role authenticated;
 `)
-for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql", "0005_turnos_fijos.sql", "0006_historial.sql", "0007_intervalo_de_horarios.sql"]) {
+for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql", "0005_turnos_fijos.sql", "0006_historial.sql", "0007_intervalo_de_horarios.sql", "0008_vales_y_semana.sql"]) {
   await db.exec(readFileSync(`supabase/migrations/${f}`, "utf8"))
   console.log(`✓ ${f} aplicada`)
 }
@@ -93,4 +93,9 @@ for (const m of [10, 90]) {
   try { await step(m); console.log("✗ ERROR: aceptó un intervalo de", m); process.exit(1) }
   catch { console.log("✓ rechazó un intervalo de", m, "minutos") }
 }
+// 0008: un vale lleva barbero; una categoría inventada no entra.
+await db.query(`insert into expenses (category, description, amount, method, staff_id) values ('vale','Vale',5000,'efectivo',$1)`, [staff]);
+console.log("✓ aceptó un vale con barbero");
+try { await db.query(`insert into expenses (category, description, amount, method) values ('regalo','x',1000,'efectivo')`); console.log("✗ ERROR: aceptó una categoría inventada"); process.exit(1) }
+catch { console.log("✓ rechazó una categoría de gasto inventada") }
 await db.close()

@@ -214,6 +214,32 @@ export async function reassignAppointment(id: string, staffId: string): Promise<
 }
 
 /**
+ * La bebida se cobra junto con el corte pero se anota aparte (un cobro de
+ * "producto" sin turno): es de la casa, no suma al ticket del corte ni a la
+ * comisión del barbero. Devuelve lo cobrado (0 si no hubo).
+ */
+async function addDrink(clientId: string | null, staffId: string | null, drink: number | undefined, method: PaymentMethod, n: Date) {
+  const amount = Math.min(1_000_000, Math.max(0, Math.round(Number(drink) || 0)))
+  if (!amount) return 0
+  await store().addPayment({
+    appointmentId: null,
+    clientId,
+    staffId,
+    serviceId: null,
+    concept: "Bebida",
+    kind: "producto",
+    listPrice: amount,
+    discount: 0,
+    discountReason: null,
+    tip: 0,
+    amount,
+    method,
+    paidAt: n.toISOString(),
+  })
+  return amount
+}
+
+/**
  * Cobrar un turno. El descuento de fidelidad NO lo decide la pantalla: se
  * recalcula acá con la misma regla que dibuja la tarjeta, así no se puede
  * aplicar dos veces ni olvidarlo. Y la base impide cobrar el mismo turno dos
@@ -223,6 +249,8 @@ export async function chargeAppointment(input: {
   appointmentId: string
   method: PaymentMethod
   tip: number
+  /** Bebida que se llevó, en pesos (0 = ninguna). Es de la casa: no paga comisión. */
+  drink?: number
   useReward: boolean
 }): Promise<Result<{ amount: number; discount: number }>> {
   await assertPanelSession()
@@ -266,9 +294,10 @@ export async function chargeAppointment(input: {
     if (e instanceof AlreadyChargedError) return { ok: false, error: "Ese turno ya está cobrado." }
     throw e
   }
+  const drink = await addDrink(appt.clientId, appt.staffId, input.drink, input.method, n)
   await releaseIfFinishedEarly(appt, n)
   refresh()
-  return { ok: true, data: { amount, discount } }
+  return { ok: true, data: { amount: amount + drink, discount } }
 }
 
 /**
@@ -376,6 +405,8 @@ export async function quickCharge(input: {
   newClient?: { name: string; phone?: string }
   method: PaymentMethod
   tip: number
+  /** Bebida que se llevó, en pesos (0 = ninguna). Es de la casa: no paga comisión. */
+  drink?: number
   useReward: boolean
   /** Cuánto duró el corte. Por defecto, lo que dura el servicio. */
   durationMin?: number
@@ -465,8 +496,9 @@ export async function quickCharge(input: {
     method: input.method,
     paidAt: n.toISOString(),
   })
+  const drink = await addDrink(clientId, staff.id, input.drink, input.method, n)
   refresh()
-  return { ok: true, data: { amount, discount, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() } }
+  return { ok: true, data: { amount: amount + drink, discount, startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString() } }
 }
 
 export async function addExpense(input: {
@@ -474,14 +506,22 @@ export async function addExpense(input: {
   description: string
   amount: number
   method: PaymentMethod
+  /** A quién corresponde (vales y pagos de sueldo). */
+  staffId?: string
 }): Promise<Result> {
   await assertPanelSession()
-  if (!input.description.trim() || !(input.amount > 0)) {
+  const needsStaff = input.category === "vale" || (input.category === "sueldos" && !!input.staffId)
+  const staffId = needsStaff ? input.staffId : undefined
+  if (input.category === "vale" && !staffId) return { ok: false, error: "Elegí a quién le diste el vale." }
+  if (staffId && !(await db()).staff.some((x) => x.id === staffId)) return { ok: false, error: "Ese barbero no existe." }
+  if (!input.description.trim() && input.category !== "vale") {
     return { ok: false, error: "Completá descripción y monto." }
   }
+  if (!(input.amount > 0)) return { ok: false, error: "Completá descripción y monto." }
   await store().addExpense({
+    staffId: staffId ?? null,
     category: input.category,
-    description: input.description.trim().slice(0, 200),
+    description: (input.description.trim() || "Vale").slice(0, 200),
     amount: Math.round(input.amount),
     method: input.method,
     paidAt: (await now()).toISOString(),

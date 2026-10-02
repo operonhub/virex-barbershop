@@ -130,6 +130,10 @@ export const memoryStore: Store = {
     state().expenses.push({ ...expense, id: newId("ga") })
   },
 
+  async addPayment(payment) {
+    state().payments.push({ ...payment, id: newId("co") })
+  },
+
   async updateAgentSettings(patch) {
     const s = state()
     s.agentSettings = { ...s.agentSettings, ...patch }

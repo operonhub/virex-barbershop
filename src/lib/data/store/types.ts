@@ -146,6 +146,9 @@ export interface Store {
 
   addExpense(expense: NewExpense): Promise<void>
 
+  /** Cobro suelto sin turno (una bebida, un producto). */
+  addPayment(payment: NewPayment): Promise<void>
+
   updateAgentSettings(patch: Partial<AgentSettings>): Promise<void>
 
   /** Busca la conversación por su id en Zernio; si no existe, la crea. */

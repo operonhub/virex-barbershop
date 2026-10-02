@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { Banknote, CreditCard, Landmark, QrCode, Search, Sparkles, UserPlus, Wallet } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { AmountStepper } from "@/components/forms/amount-stepper"
 import { quickCharge } from "@/lib/data/actions"
 import { TimeSelect } from "@/components/forms/time-select"
 import { formatARS, METHOD_LABEL, METHODS } from "@/lib/money"
@@ -21,7 +22,6 @@ const METHOD_ICON: Record<PaymentMethod, typeof Banknote> = {
   debito: CreditCard,
   credito: Wallet,
 }
-const TIPS = [0, 1000, 2000, 3000]
 
 /** Duraciones para elegir: las comunes, más la del servicio si es otra. */
 const durationChoices = (serviceMin: number) => [...new Set([30, 45, 60, 90, serviceMin])].sort((a, b) => a - b)
@@ -66,6 +66,7 @@ export function QuickChargeDialog({
   const [serviceId, setServiceId] = useState(services.find((s) => s.active)?.id ?? "")
   const [method, setMethod] = useState<PaymentMethod>("efectivo")
   const [tip, setTip] = useState(0)
+  const [drink, setDrink] = useState(0)
   // El corte ya se hizo: "recién terminó" lo anota terminando ahora; si no, a qué hora empezó y cuánto duró.
   const [startedAt, setStartedAt] = useState<string | null>(null)
   const [durationOverride, setDurationOverride] = useState<number | null>(null)
@@ -83,7 +84,7 @@ export function QuickChargeDialog({
   const rewardAvailable = !!rewardStatus?.rewardReady && !!service?.countsForLoyalty
   const [useReward, setUseReward] = useState(false)
   const discount = useReward && rewardAvailable && service ? Math.round((service.price * BRAND.loyalty.rewardDiscountPct) / 100) : 0
-  const total = (service?.price ?? 0) - discount + tip
+  const total = (service?.price ?? 0) - discount + tip + drink
 
   function reset() {
     setStep("cliente")
@@ -93,6 +94,7 @@ export function QuickChargeDialog({
     setNewPhone("")
     setMethod("efectivo")
     setTip(0)
+    setDrink(0)
     setUseReward(false)
     setStartedAt(null)
     setDurationOverride(null)
@@ -114,6 +116,7 @@ export function QuickChargeDialog({
         newClient: client ? undefined : { name: newName, phone: newPhone },
         method,
         tip,
+        drink,
         useReward: useReward && rewardAvailable,
         durationMin: durationOverride ?? undefined,
         startedAt: startedAt ?? undefined,
@@ -326,24 +329,9 @@ export function QuickChargeDialog({
               </div>
             </section>
 
-            <section>
-              <h3 className="eyebrow mb-2">Propina</h3>
-              <div className="flex gap-2">
-                {TIPS.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTip(t)}
-                    aria-pressed={tip === t}
-                    className={cn(
-                      "num h-9 flex-1 rounded-lg border text-[13px] font-medium transition-colors",
-                      tip === t ? "border-gold bg-gold/8 text-ivory" : "border-line bg-surface-2 text-ivory-2 hover:border-line-strong"
-                    )}
-                  >
-                    {t === 0 ? "Sin propina" : formatARS(t)}
-                  </button>
-                ))}
-              </div>
+            <section className="space-y-3">
+              <AmountStepper label="Propina" value={tip} onChange={setTip} />
+              <AmountStepper label="Bebida" value={drink} onChange={setDrink} />
             </section>
 
             <div className="border-t border-line pt-4">

@@ -8,13 +8,14 @@ import { Button } from "@/components/ui/button"
 import { Panel } from "@/components/shell/page-header"
 import { ChargeDialog } from "./charge-dialog"
 import { QuickChargeDialog } from "./quick-charge-dialog"
-import { addExpense, closeCash } from "@/lib/data/actions"
+import { ExpenseDialog } from "./expense-dialog"
+import { closeCash } from "@/lib/data/actions"
 import { formatARS, formatNumber, METHOD_LABEL, METHODS, pct } from "@/lib/money"
 import { hm } from "@/lib/time"
 import { cn } from "@/lib/utils"
 import type { MoneySummary, StaffLine } from "@/lib/domain/finance"
 import type { LoyaltyStatus } from "@/lib/domain/loyalty"
-import type { Appointment, CashClosure, Client, Expense, ExpenseCategory, Payment, PaymentMethod, Service, Staff } from "@/lib/domain/types"
+import type { Appointment, CashClosure, Client, Expense, Payment, PaymentMethod, Service, Staff } from "@/lib/domain/types"
 
 const METHOD_ICON: Record<PaymentMethod, typeof Banknote> = {
   efectivo: Banknote,
@@ -250,7 +251,7 @@ export function CajaView({
               <ul>
                 {expenses.map((e) => (
                   <li key={e.id} className="flex items-center justify-between border-t border-line px-5 py-2.5 text-[13px] first:border-0">
-                    <span className="text-ivory-2">{e.description}</span>
+                    <span className="text-ivory-2">{expenseLabel(e, staff)}</span>
                     <span className="num text-ivory">−{formatARS(e.amount)}</span>
                   </li>
                 ))}
@@ -305,99 +306,10 @@ export function CajaView({
           depositPaid={depositByAppointment[charging.id] ?? 0}
         />
       )}
-      <ExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} />
+      <ExpenseDialog open={expenseOpen} onOpenChange={setExpenseOpen} staff={staff} />
       {closeOpen && <CloseDialog onClose={() => setCloseOpen(false)} day={day} expected={expectedCash} money={money} previous={closure} />}
       <QuickChargeDialog open={quickOpen} onOpenChange={setQuickOpen} staff={staff} services={services} clients={clients} loyalty={loyalty} />
     </>
-  )
-}
-
-const CATEGORIES: { id: ExpenseCategory; label: string }[] = [
-  { id: "insumos", label: "Insumos" },
-  { id: "servicios", label: "Servicios" },
-  { id: "alquiler", label: "Alquiler" },
-  { id: "sueldos", label: "Sueldos" },
-  { id: "marketing", label: "Publicidad" },
-  { id: "otros", label: "Otros" },
-]
-
-function ExpenseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const [category, setCategory] = useState<ExpenseCategory>("insumos")
-  const [description, setDescription] = useState("")
-  const [amount, setAmount] = useState("")
-  const [method, setMethod] = useState<PaymentMethod>("efectivo")
-  const [pending, startTransition] = useTransition()
-
-  function submit() {
-    startTransition(async () => {
-      const res = await addExpense({ category, description, amount: Number(amount.replace(/\D/g, "")), method })
-      if (!res.ok) {
-        toast.error(res.error)
-        return
-      }
-      toast.success("Gasto cargado")
-      setDescription("")
-      setAmount("")
-      onOpenChange(false)
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px]">
-        <DialogHeader>
-          <DialogTitle className="font-display text-[20px]">Cargar gasto</DialogTitle>
-          <DialogDescription className="text-ivory-3">Lo que sale de la caja: insumos, un arreglo, la luz.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-1.5">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setCategory(c.id)}
-                aria-pressed={category === c.id}
-                className={cn(
-                  "h-9 rounded-lg border text-[12.5px] font-medium",
-                  category === c.id ? "border-gold bg-gold/8 text-ivory" : "border-line bg-surface-2 text-ivory-2"
-                )}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Descripción (ej. hojas de afeitar)"
-            className="h-10 w-full rounded-lg border border-line-strong bg-surface-2 px-3 text-[14px] text-ivory placeholder:text-ivory-3 focus:outline-none"
-          />
-          <div className="flex gap-2">
-            <input
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="numeric"
-              placeholder="Monto"
-              className="num h-10 flex-1 rounded-lg border border-line-strong bg-surface-2 px-3 text-[14px] text-ivory placeholder:text-ivory-3 focus:outline-none"
-            />
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-              className="h-10 rounded-lg border border-line-strong bg-surface-2 px-2 text-[13px] text-ivory"
-            >
-              {METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {METHOD_LABEL[m]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button size="lg" className="h-10 w-full font-semibold" disabled={pending} onClick={submit}>
-            Guardar gasto
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   )
 }
 
@@ -484,4 +396,11 @@ function CloseDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+/** "Vale · Nehemías — nafta", o la descripción tal cual en un gasto común. */
+function expenseLabel(e: Expense, staff: Staff[]) {
+  if (e.category !== "vale") return e.description
+  const who = staff.find((m) => m.id === e.staffId)?.name
+  return ["Vale", who, e.description !== "Vale" && e.description].filter(Boolean).join(" · ")
 }

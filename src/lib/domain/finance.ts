@@ -91,6 +91,7 @@ export function expensesByCategory(expenses: Expense[]): Record<ExpenseCategory,
     sueldos: 0,
     marketing: 0,
     otros: 0,
+    vale: 0,
   }
   for (const e of expenses) out[e.category] += e.amount
   return out
@@ -187,4 +188,101 @@ export function dailySeries(payments: Payment[], days: string[]) {
     totals.set(d, (totals.get(d) ?? 0) + p.amount)
   }
   return days.map((day) => ({ day, total: totals.get(day) ?? 0 }))
+}
+
+/* ── Cierre de la semana ── */
+
+export interface WeekStaffLine {
+  staff: Staff
+  /** Cortes (unidades) cobrados en la semana. */
+  services: number
+  /** Lo facturado por sus servicios, sin propinas. */
+  revenue: number
+  tips: number
+  /** Comisión sobre lo facturado (0 en un dueño: lo que factura es de la casa). */
+  commission: number
+  /** Vales o adelantos que ya se llevó. */
+  advances: number
+  /** Pagos de sueldo ya hechos en la semana. */
+  paid: number
+  /** Lo que falta pagarle: comisión + propinas − vales − pagos. Negativo = se adelantó de más. */
+  balance: number
+}
+
+export interface WeekClosing {
+  days: { day: string; income: number; expenses: number }[]
+  income: number
+  /** Servicios + productos (sin propinas). */
+  sales: number
+  tips: number
+  /** Bebidas, productos y lo demás que no es un corte. */
+  products: number
+  staffLines: WeekStaffLine[]
+  /** Comisiones y propinas de los empleados (lo devengado, haya o no cobrado). */
+  payroll: number
+  /** Gastos del local: todo menos vales y pagos a barberos. */
+  operatingExpenses: number
+  /** Vales entregados a dueños (retiros). */
+  ownerAdvances: number
+  /** Ingresos − sueldos devengados − gastos del local: lo que le queda a la casa. */
+  result: number
+}
+
+/**
+ * Cierre de una semana: lo que hay que pagarle a cada uno y lo que le queda
+ * a la casa. Mismo criterio que la hoja del Excel (cortes, comisión, vales,
+ * "semanal neto"), pero calculado con los cobros del panel.
+ *
+ * Los dueños (comisión 0) no cobran comisión: lo que facturan es de la casa.
+ * Sus vales cuentan como retiros, no como gasto del local.
+ */
+export function weekClosing(payments: Payment[], expenses: Expense[], staff: Staff[], days: string[]): WeekClosing {
+  const inWeek = payments.filter((p) => days.includes(dayKey(p.paidAt)))
+  const expWeek = expenses.filter((e) => days.includes(dayKey(e.paidAt)))
+  const money = summarizePayments(inWeek)
+  const lines = staffBreakdown(inWeek, staff)
+
+  const staffLines: WeekStaffLine[] = lines.map((l) => {
+    const mine = expWeek.filter((e) => e.staffId === l.staff.id)
+    const advances = mine.filter((e) => e.category === "vale").reduce((s, e) => s + e.amount, 0)
+    const paid = mine.filter((e) => e.category === "sueldos").reduce((s, e) => s + e.amount, 0)
+    const commission = Math.round((l.revenue * l.staff.commissionPct) / 100)
+    const owner = l.staff.commissionPct === 0
+    return {
+      staff: l.staff,
+      services: l.services,
+      revenue: l.revenue,
+      tips: l.tips,
+      commission,
+      advances,
+      paid,
+      // Un dueño no tiene saldo: se lleva lo que sobra de la casa.
+      balance: owner ? 0 : commission + l.tips - advances - paid,
+    }
+  })
+
+  const staffIds = new Set(staff.map((s) => s.id))
+  const owners = new Set(staff.filter((s) => s.commissionPct === 0).map((s) => s.id))
+  const payroll = staffLines.filter((l) => l.staff.commissionPct > 0).reduce((s, l) => s + l.commission + l.tips, 0)
+  const operatingExpenses = expWeek
+    .filter((e) => !(e.staffId && staffIds.has(e.staffId)) && e.category !== "vale")
+    .reduce((s, e) => s + e.amount, 0)
+  const ownerAdvances = expWeek.filter((e) => e.category === "vale" && e.staffId && owners.has(e.staffId)).reduce((s, e) => s + e.amount, 0)
+
+  return {
+    days: days.map((day) => ({
+      day,
+      income: inWeek.filter((p) => dayKey(p.paidAt) === day).reduce((s, p) => s + p.amount, 0),
+      expenses: expWeek.filter((e) => dayKey(e.paidAt) === day).reduce((s, e) => s + e.amount, 0),
+    })),
+    income: money.gross,
+    sales: money.services + money.products,
+    tips: money.tips,
+    products: money.products,
+    staffLines,
+    payroll,
+    operatingExpenses,
+    ownerAdvances,
+    result: money.gross - payroll - operatingExpenses,
+  }
 }

@@ -125,6 +125,7 @@ const toExpense = (r: Row): Expense => ({
   amount: Number(r.amount),
   method: r.method as Expense["method"],
   paidAt: isoOr(r.paid_at as Date),
+  staffId: (r.staff_id as string) ?? null,
   imported: (r.imported as boolean) ?? false,
 })
 
@@ -386,8 +387,17 @@ export const postgresStore: Store = {
 
   async addExpense(e) {
     const sql = sqlClient()
-    await sql`insert into expenses (category, description, amount, method, paid_at)
-              values (${e.category}, ${e.description}, ${e.amount}, ${e.method}, ${e.paidAt})`
+    await sql`insert into expenses (category, description, amount, method, paid_at, staff_id)
+              values (${e.category}, ${e.description}, ${e.amount}, ${e.method}, ${e.paidAt}, ${e.staffId ?? null})`
+  },
+
+  async addPayment(p) {
+    const sql = sqlClient()
+    await sql`
+      insert into payments (appointment_id, client_id, staff_id, service_id, concept, kind, list_price, discount,
+                            discount_reason, tip, amount, method, paid_at)
+      values (${p.appointmentId}, ${p.clientId}, ${p.staffId}, ${p.serviceId}, ${p.concept}, ${p.kind}, ${p.listPrice},
+              ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt})`
   },
 
   async updateAgentSettings(patch) {

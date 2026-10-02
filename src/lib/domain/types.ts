@@ -185,6 +185,8 @@ export type ExpenseCategory =
   | "sueldos"
   | "marketing"
   | "otros"
+  /** Adelanto de plata a un barbero o a un dueño. Lleva `staffId`. */
+  | "vale"
 
 export interface Expense {
   id: string
@@ -193,6 +195,8 @@ export interface Expense {
   amount: number
   method: PaymentMethod
   paidAt: string
+  /** Barbero al que corresponde (vales y pagos de sueldo). `null` en un gasto del local. */
+  staffId?: string | null
   /** true si viene del Excel de antes del panel. */
   imported?: boolean
 }
