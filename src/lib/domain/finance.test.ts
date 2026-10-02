@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { serviceBreakdown, sourceBreakdown, staffBreakdown, summarizePayments } from "./finance"
-import type { Appointment, Payment, Service, Staff } from "./types"
+import { serviceBreakdown, sourceBreakdown, staffBreakdown, summarizePayments, weekClosing } from "./finance"
+import type { Appointment, Expense, Payment, Service, Staff } from "./types"
 
 const staff: Staff[] = [{ id: "st1", name: "Sebastián", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: [] }]
 const services: Service[] = [{ id: "sv1", name: "Corte + barba", category: "combo", durationMin: 60, price: 20000, countsForLoyalty: true, active: true }]
@@ -89,5 +89,52 @@ describe("un turno con seña: dos pagos, una sola venta", () => {
     const out = sourceBreakdown(payments, [appt])
     expect(out.web.count).toBe(1)
     expect(out.web.revenue).toBe(12000)
+  })
+})
+
+describe("cierre de la semana", () => {
+  const team: Staff[] = [
+    { id: "du", name: "Santiago", role: "dueno", commissionPct: 0, active: true, skipsServiceIds: [] },
+    { id: "ne", name: "Nehemías", role: "barbero", commissionPct: 50, active: true, skipsServiceIds: [] },
+  ]
+  // Lunes 7/9 a domingo 13/9 (hora argentina).
+  const days = ["2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12", "2026-09-13"]
+  const corte = (over: Partial<Payment>) => base({ staffId: "ne", listPrice: 20000, amount: 20000, paidAt: "2026-09-10T15:00:00.000Z", ...over })
+  const gasto = (over: Partial<Expense>): Expense => ({ id: `g${++n}`, category: "otros", description: "x", amount: 1000, method: "efectivo", paidAt: "2026-09-10T15:00:00.000Z", ...over })
+
+  it("a un empleado: comisión + propinas − vales − pagos ya hechos", () => {
+    const pays = [corte({}), corte({ tip: 2000, amount: 22000 })]
+    const exps = [gasto({ category: "vale", staffId: "ne", amount: 5000 }), gasto({ category: "sueldos", staffId: "ne", amount: 3000 })]
+    const w = weekClosing(pays, exps, team, days)
+    const nemo = w.staffLines.find((l) => l.staff.id === "ne")!
+    expect(nemo.services).toBe(2)
+    expect(nemo.commission).toBe(20000) // 50 % de 40.000
+    expect(nemo.tips).toBe(2000)
+    expect(nemo.balance).toBe(20000 + 2000 - 5000 - 3000)
+  })
+
+  it("al dueño no se le liquida comisión y sus vales son retiros, no gasto del local", () => {
+    const pays = [corte({ staffId: "du" })]
+    const exps = [gasto({ category: "vale", staffId: "du", amount: 4000 }), gasto({ category: "insumos", amount: 6000 })]
+    const w = weekClosing(pays, exps, team, days)
+    expect(w.staffLines.find((l) => l.staff.id === "du")!.balance).toBe(0)
+    expect(w.payroll).toBe(0)
+    expect(w.ownerAdvances).toBe(4000)
+    expect(w.operatingExpenses).toBe(6000)
+    expect(w.result).toBe(20000 - 6000)
+  })
+
+  it("la bebida es de la casa: no paga comisión al barbero", () => {
+    const bebida = corte({ kind: "producto", appointmentId: null, concept: "Bebida", listPrice: 3000, amount: 3000 })
+    const w = weekClosing([corte({}), bebida], [], team, days)
+    expect(w.products).toBe(3000)
+    expect(w.staffLines.find((l) => l.staff.id === "ne")!.commission).toBe(10000)
+    expect(w.result).toBe(23000 - 10000)
+  })
+
+  it("deja afuera lo de otras semanas", () => {
+    const w = weekClosing([corte({ paidAt: "2026-09-01T15:00:00.000Z" })], [gasto({ paidAt: "2026-09-20T15:00:00.000Z" })], team, days)
+    expect(w.income).toBe(0)
+    expect(w.operatingExpenses).toBe(0)
   })
 })

@@ -4,10 +4,13 @@ import { Delta, PageBody, PageHeader, Panel } from "@/components/shell/page-head
 import { CumulativeChart, WeekdayChart } from "@/components/finance/charts"
 import { DATA_GOLD } from "@/lib/chart-palette"
 import { SOURCE_LABEL } from "@/components/agenda/status"
-import { getFinanzas } from "@/lib/data/queries"
+import { WeekView } from "@/components/finance/week-view"
+import { WeekActions } from "@/components/finance/week-actions"
+import { getFinanzas, getSemana } from "@/lib/data/queries"
 import { now } from "@/lib/data/repo"
 import { delta, formatARS, formatNumber, METHOD_LABEL, METHODS, pct } from "@/lib/money"
-import { addMonths, dayKey, formatMonth, monthKey, WEEKDAY_SHORT, weekday } from "@/lib/time"
+import { addDays, addMonths, dayKey, formatMonth, formatWeekRange, monthKey, WEEKDAY_SHORT, weekday, weekStart } from "@/lib/time"
+import { cn } from "@/lib/utils"
 import { isOpen } from "@/lib/domain/slots"
 import type { AppointmentSource, ExpenseCategory } from "@/lib/domain/types"
 
@@ -20,6 +23,7 @@ const EXPENSE_LABEL: Record<ExpenseCategory, string> = {
   sueldos: "Sueldos",
   marketing: "Publicidad",
   otros: "Otros",
+  vale: "Vales",
 }
 
 /**
@@ -29,7 +33,9 @@ const EXPENSE_LABEL: Record<ExpenseCategory, string> = {
  */
 export default async function FinanzasPage({ searchParams }: PageProps<"/finanzas">) {
   const params = await searchParams
-  const current = monthKey(dayKey(await now()))
+  const today = dayKey(await now())
+  if (params.vista !== "mes") return <SemanaPage week={params.semana} today={today} />
+  const current = monthKey(today)
   const month = typeof params.mes === "string" && /^\d{4}-\d{2}$/.test(params.mes) && params.mes <= current ? params.mes : current
   const d = await getFinanzas(month)
 
@@ -69,11 +75,13 @@ export default async function FinanzasPage({ searchParams }: PageProps<"/finanza
             : "")
         }
         actions={
+          <>
+          <ViewToggle active="mes" />
           <div className="flex items-center rounded-lg border border-line-strong">
-            <Link href={`/finanzas?mes=${addMonths(month, -1)}`} aria-label="Mes anterior" className="grid size-10 place-items-center text-ivory-2 hover:text-ivory">
+            <Link href={`/finanzas?vista=mes&mes=${addMonths(month, -1)}`} aria-label="Mes anterior" className="grid size-10 place-items-center text-ivory-2 hover:text-ivory">
               <ChevronLeft className="size-4" />
             </Link>
-            <Link href="/finanzas" className="h-10 border-x border-line-strong px-3 text-[13px] leading-10 font-medium text-ivory">
+            <Link href="/finanzas?vista=mes" className="h-10 border-x border-line-strong px-3 text-[13px] leading-10 font-medium text-ivory">
               Este mes
             </Link>
             {d.isCurrent ? (
@@ -81,11 +89,12 @@ export default async function FinanzasPage({ searchParams }: PageProps<"/finanza
                 <ChevronRight className="size-4" />
               </span>
             ) : (
-              <Link href={`/finanzas?mes=${addMonths(month, 1)}`} aria-label="Mes siguiente" className="grid size-10 place-items-center text-ivory-2 hover:text-ivory">
+              <Link href={`/finanzas?vista=mes&mes=${addMonths(month, 1)}`} aria-label="Mes siguiente" className="grid size-10 place-items-center text-ivory-2 hover:text-ivory">
                 <ChevronRight className="size-4" />
               </Link>
             )}
           </div>
+          </>
         }
       />
 
@@ -175,6 +184,70 @@ export default async function FinanzasPage({ searchParams }: PageProps<"/finanza
         </Panel>
       </div>
     </PageBody>
+  )
+}
+
+/** Cierre de la semana (lunes a domingo): lo que pidió el cliente primero. */
+async function SemanaPage({ week, today }: { week: string | string[] | undefined; today: string }) {
+  const thisWeek = weekStart(today)
+  const wanted = typeof week === "string" && /^\d{4}-\d{2}-\d{2}$/.test(week) ? weekStart(week) : thisWeek
+  const start = wanted > thisWeek ? thisWeek : wanted
+  const d = await getSemana(start)
+
+  return (
+    <PageBody>
+      <PageHeader
+        eyebrow="Finanzas"
+        title={<span className="inline-block first-letter:uppercase">Semana del {formatWeekRange(start)}</span>}
+        description={
+          d.isCurrent
+            ? "Semana en curso, de lunes a domingo. Cada uno ve cuánto le toca, qué vales tiene y cuánto le queda a la casa."
+            : "Semana cerrada."
+        }
+        actions={
+          <>
+            <ViewToggle active="semana" />
+            <div className="flex items-center rounded-lg border border-line-strong">
+              <Link href={`/finanzas?semana=${addDays(start, -7)}`} aria-label="Semana anterior" className="grid size-10 place-items-center text-ivory-2 hover:text-ivory">
+                <ChevronLeft className="size-4" />
+              </Link>
+              <Link href="/finanzas" className="h-10 border-x border-line-strong px-3 text-[13px] leading-10 font-medium text-ivory">
+                Esta semana
+              </Link>
+              {d.isCurrent ? (
+                <span className="grid size-10 place-items-center text-ivory-3/40">
+                  <ChevronRight className="size-4" />
+                </span>
+              ) : (
+                <Link href={`/finanzas?semana=${addDays(start, 7)}`} aria-label="Semana siguiente" className="grid size-10 place-items-center text-ivory-2 hover:text-ivory">
+                  <ChevronRight className="size-4" />
+                </Link>
+              )}
+            </div>
+            <WeekActions staff={d.staff} />
+          </>
+        }
+      />
+      <WeekView d={d} expenses={d.expenses} staff={d.staff} today={today} />
+    </PageBody>
+  )
+}
+
+function ViewToggle({ active }: { active: "semana" | "mes" }) {
+  const tab = (id: "semana" | "mes", label: string, href: string) => (
+    <Link
+      href={href}
+      aria-current={active === id ? "page" : undefined}
+      className={cn("h-10 px-3 text-[13px] leading-10 font-medium", active === id ? "bg-gold/10 text-ivory" : "text-ivory-3 hover:text-ivory")}
+    >
+      {label}
+    </Link>
+  )
+  return (
+    <div className="flex items-center overflow-hidden rounded-lg border border-line-strong">
+      {tab("semana", "Semana", "/finanzas")}
+      {tab("mes", "Mes", "/finanzas?vista=mes")}
+    </div>
   )
 }
 

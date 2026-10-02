@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { Banknote, CreditCard, Landmark, QrCode, Sparkles, Wallet } from "lucide-react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { AmountStepper } from "@/components/forms/amount-stepper"
 import { chargeAppointment } from "@/lib/data/actions"
 import { formatARS, METHOD_LABEL, METHODS } from "@/lib/money"
 import { hm } from "@/lib/time"
@@ -21,7 +22,6 @@ const METHOD_ICON: Record<PaymentMethod, typeof Banknote> = {
   credito: Wallet,
 }
 
-const TIPS = [0, 1000, 2000, 3000]
 
 /**
  * Cobrar un turno en tres toques: medio de pago, propina, cobrar.
@@ -55,15 +55,16 @@ export function ChargeDialog({
   const [useReward, setUseReward] = useState(rewardAvailable)
   const [method, setMethod] = useState<PaymentMethod>("efectivo")
   const [tip, setTip] = useState(0)
+  const [drink, setDrink] = useState(0)
   const [pending, startTransition] = useTransition()
 
   const discount = useReward && rewardAvailable ? Math.round((service.price * BRAND.loyalty.rewardDiscountPct) / 100) : 0
-  const total = Math.max(0, service.price - depositPaid - discount) + tip
+  const total = Math.max(0, service.price - depositPaid - discount) + tip + drink
   const stampsAfter = service.countsForLoyalty && !(useReward && rewardAvailable) ? Math.min((loyalty?.stamps ?? 0) + 1, BRAND.loyalty.stampsRequired) : 0
 
   function submit() {
     startTransition(async () => {
-      const res = await chargeAppointment({ appointmentId: appointment.id, method, tip, useReward })
+      const res = await chargeAppointment({ appointmentId: appointment.id, method, tip, drink, useReward })
       if (!res.ok) {
         toast.error(res.error)
         return
@@ -135,24 +136,9 @@ export function ChargeDialog({
             </div>
           </section>
 
-          <section>
-            <h3 className="eyebrow mb-2">Propina</h3>
-            <div className="flex gap-2">
-              {TIPS.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTip(t)}
-                  aria-pressed={tip === t}
-                  className={cn(
-                    "num h-9 flex-1 rounded-lg border text-[13px] font-medium transition-colors",
-                    tip === t ? "border-gold bg-gold/8 text-ivory" : "border-line bg-surface-2 text-ivory-2 hover:border-line-strong"
-                  )}
-                >
-                  {t === 0 ? "Sin propina" : formatARS(t)}
-                </button>
-              ))}
-            </div>
+          <section className="space-y-3">
+            <AmountStepper label="Propina" value={tip} onChange={setTip} />
+            <AmountStepper label="Bebida" value={drink} onChange={setDrink} />
           </section>
 
           <dl className="space-y-1.5 rounded-xl bg-surface-2 px-4 py-3 text-[13px]">
@@ -176,6 +162,12 @@ export function ChargeDialog({
               <div className="flex justify-between text-ivory-2">
                 <dt>Propina para {staff?.name}</dt>
                 <dd className="num">{formatARS(tip)}</dd>
+              </div>
+            )}
+            {drink > 0 && (
+              <div className="flex justify-between text-ivory-2">
+                <dt>Bebida</dt>
+                <dd className="num">{formatARS(drink)}</dd>
               </div>
             )}
             <div className="flex items-baseline justify-between border-t border-line pt-2">

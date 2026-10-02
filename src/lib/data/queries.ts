@@ -1,6 +1,6 @@
 import "server-only"
 import { db, now } from "./repo"
-import { addDays, addMonths, dayKey, daysInMonth, monthKey } from "@/lib/time"
+import { addDays, addMonths, dayKey, daysInMonth, monthKey, weekStart } from "@/lib/time"
 import { isOpen, occupancy } from "@/lib/domain/slots"
 import { fixedSlotsOn, pendingFixedSlots } from "@/lib/domain/fixed-slots"
 import { loyaltyStatus } from "@/lib/domain/loyalty"
@@ -15,6 +15,7 @@ import {
   sourceBreakdown,
   staffBreakdown,
   summarizePayments,
+  weekClosing,
 } from "@/lib/domain/finance"
 import type { Appointment, Client } from "@/lib/domain/types"
 
@@ -323,6 +324,26 @@ export async function getFinanzas(month: string) {
     occupancy: occupancy(appts, s.staff.length, elapsed),
     occupancyPrev: occupancy(apptsPrev, s.staff.length, prevDays),
     loyaltyRedeemed: pay.filter((p) => p.discountReason === "fidelidad").length,
+  }
+}
+
+/* ── Cierre de la semana ── */
+
+/** Una semana (lunes a domingo): lo que se le paga a cada uno y lo que le queda a la casa. */
+export async function getSemana(start: string) {
+  const s = await db()
+  const n = await now()
+  const today = dayKey(n)
+  const monday = weekStart(start)
+  const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i))
+  return {
+    now: n.toISOString(),
+    start: monday,
+    isCurrent: days.includes(today),
+    today,
+    staff: s.staff.filter((m) => m.active),
+    expenses: s.expenses.filter((e) => days.includes(dayKey(e.paidAt))).sort((a, b) => b.paidAt.localeCompare(a.paidAt)),
+    ...weekClosing(s.payments, s.expenses, s.staff.filter((m) => m.active), days),
   }
 }
 
