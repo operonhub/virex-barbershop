@@ -25,6 +25,8 @@ import type { AgentActionKind, Conversation } from "@/lib/domain/types"
  * producción). Cada corrida del agente queda registrada en `agent_runs`.
  */
 
+const ASK_TO_WRITE = "Hola, por acá no puedo escuchar audios ni ver fotos. ¿Me lo podés escribir, por favor?"
+
 /** Guarda un evento del inbox. Devuelve la conversación si hay que responder. */
 export async function ingestInboxEvent(event: Extract<NormalizedEvent, { kind: "inbox" }>): Promise<string | null> {
   const c = event.conversation
@@ -90,9 +92,23 @@ export async function respondToConversation(conversationId: string): Promise<{ o
   const now = await clockNow()
 
   // Audio, foto o sticker llegan sin texto: la IA no tiene qué leer (y Gemini rechaza partes vacías con un 400).
+  // Se le pide por favor que escriba; si insiste con otro mensaje sin texto, lo ve una persona.
   if (!last.body.trim()) {
-    const reason = "El cliente mandó algo sin texto (audio, foto o sticker). Queda para una persona."
-    await store().updateConversation(conv.id, { mode: "humano", needsHuman: true, handoffReason: reason })
+    const alreadyAsked = thread.filter((m) => m.author === "ia").at(-1)?.body === ASK_TO_WRITE
+    if (alreadyAsked) {
+      const reason = "El cliente insiste con mensajes sin texto (audio, foto o sticker). Queda para una persona."
+      await store().updateConversation(conv.id, { mode: "humano", needsHuman: true, handoffReason: reason })
+      return { ok: true }
+    }
+    const sentAt = new Date().toISOString()
+    const saved = await store().addMessage({ conversationId: conv.id, author: "ia", staffId: null, body: ASK_TO_WRITE, sentAt, action: null, actionRef: null })
+    await store().updateConversation(conv.id, { lastMessageAt: sentAt, unread: 0 })
+    const delivery = await deliverToChannel(conv, ASK_TO_WRITE, now)
+    if (!delivery.ok) {
+      await store().updateConversation(conv.id, { needsHuman: true, handoffReason: delivery.error })
+      return { ok: false, reason: delivery.error }
+    }
+    if (saved && delivery.externalId) await store().setMessageExternalId(saved.id, delivery.externalId)
     return { ok: true }
   }
 
