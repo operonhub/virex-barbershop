@@ -89,6 +89,13 @@ export async function respondToConversation(conversationId: string): Promise<{ o
   if (!last) return { ok: false, reason: "No hay mensaje del cliente para responder." }
   const now = await clockNow()
 
+  // Audio, foto o sticker llegan sin texto: la IA no tiene qué leer (y Gemini rechaza partes vacías con un 400).
+  if (!last.body.trim()) {
+    const reason = "El cliente mandó algo sin texto (audio, foto o sticker). Queda para una persona."
+    await store().updateConversation(conv.id, { mode: "humano", needsHuman: true, handoffReason: reason })
+    return { ok: true }
+  }
+
   const lastBooking = [...thread].reverse().findIndex((m) => m.action === "turno_creado")
   const guard = shouldHandOff({
     text: last.body,
@@ -102,7 +109,7 @@ export async function respondToConversation(conversationId: string): Promise<{ o
     return { ok: true }
   }
 
-  const history: TurnInput[] = thread.map((m) => ({
+  const history: TurnInput[] = thread.filter((m) => m.body.trim()).map((m) => ({
     role: m.author === "cliente" ? "user" : "assistant",
     text: m.author === "staff" ? `[Respondió una persona del equipo] ${m.body}` : m.body,
   }))

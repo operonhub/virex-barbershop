@@ -147,9 +147,23 @@ function toContents(input: SessionInput): Content[] {
   })
 }
 
+/** El motivo corto que da la API (sin el cuerpo crudo), para poder diagnosticar un 400. */
+function apiDetail(error: ApiError): string {
+  let text = error.message
+  try {
+    const parsed = JSON.parse(text)
+    text = parsed?.error?.message ?? text
+  } catch {}
+  return text.replace(/\s+/g, " ").trim().slice(0, 160)
+}
+
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 400) return "La IA rechazó el pedido (configuración inválida)."
+    if (error.status === 400) {
+      const detail = apiDetail(error)
+      console.warn("[agente] Gemini rechazó el pedido (400):", detail)
+      return `La IA rechazó el pedido (configuración inválida${detail ? `: ${detail}` : ""}).`
+    }
     if (error.status === 401 || error.status === 403) return "La clave de Gemini no es válida o no tiene permiso para ese modelo."
     if (error.status === 404) return "Ese modelo de Gemini no existe o no está disponible para esta clave."
     if (error.status === 429) return "Se alcanzó el límite de pedidos a la IA. Reintentá en un minuto."
