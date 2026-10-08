@@ -89,6 +89,9 @@ export async function respondToConversation(conversationId: string): Promise<{ o
   const thread = s.messages.filter((m) => m.conversationId === conv.id)
   const last = [...thread].reverse().find((m) => m.author === "cliente")
   if (!last) return { ok: false, reason: "No hay mensaje del cliente para responder." }
+  // Si después del último mensaje del cliente ya contestó el agente (otra corrida se adelantó) o una
+  // persona, no hay nada que responder: Gemini rechaza con 400 un pedido que termina en turno del modelo.
+  if (thread[thread.length - 1] !== last) return { ok: true }
   const now = await clockNow()
 
   // Audio, foto o sticker llegan sin texto: la IA no tiene qué leer (y Gemini rechaza partes vacías con un 400).
