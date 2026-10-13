@@ -62,7 +62,7 @@ export const anthropicProvider: ModelProvider = {
             ...(input.effort && supportsEffort(input.model) ? { output_config: { effort: input.effort } } : {}),
           })
         } catch (error) {
-          return { kind: "stop", reason: describeError(error), usage: NO_USAGE }
+          return { kind: "stop", reason: describeError(error), usage: NO_USAGE, transient: isTransientAnthropicError(error) }
         }
 
         const usage = {
@@ -108,6 +108,11 @@ function toMessages(input: SessionInput): Anthropic.Beta.BetaMessageParam[] {
     if (last?.role === "user" && typeof last.content === "string") last.content = withContext(last.content, input.contextNote)
   }
   return out
+}
+
+function isTransientAnthropicError(error: unknown): boolean {
+  if (error instanceof Anthropic.RateLimitError || error instanceof Anthropic.APIConnectionError) return true
+  return error instanceof Anthropic.APIError && typeof error.status === "number" && error.status >= 500
 }
 
 /** Errores tipados, del más específico al más general. Nunca se muestra el cuerpo crudo. */

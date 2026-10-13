@@ -30,7 +30,8 @@ const gemini = () =>
   }))
 
 /** Esperas entre reintentos y tiempo máximo (el webhook tiene 60 s en total). */
-const RETRY = { delaysMs: [1_500, 3_500], budgetMs: 40_000 }
+// Corto a propósito: si el modelo está sobrecargado, conviene probar con el de respaldo (run.ts) antes que insistir.
+const RETRY = { delaysMs: [1_500], budgetMs: 15_000 }
 
 /** Errores que suelen pasar solos: límite de uso, fallas del servicio, red y demoras. */
 export function isTransientGeminiError(error: unknown): boolean {
@@ -92,7 +93,7 @@ export const geminiProvider: ModelProvider = {
             },
           })
         } catch (error) {
-          return { kind: "stop", reason: describeError(error), usage: NO_USAGE }
+          return { kind: "stop", reason: describeError(error), usage: NO_USAGE, transient: isTransientGeminiError(error) }
         }
 
         const meta = response.usageMetadata

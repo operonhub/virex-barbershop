@@ -65,6 +65,30 @@ export function readAgentConfig(env: Record<string, string | undefined> = proces
   }
 }
 
+export interface FallbackModel {
+  provider: AgentProvider
+  model: string
+}
+
+/**
+ * Modelos de respaldo, en orden, para cuando el principal está sobrecargado
+ * (503/504/límite). Primero otro modelo del MISMO proveedor (la capacidad es
+ * por modelo, así que suele andar aunque el otro esté caído) y después, si hay
+ * clave, el otro proveedor. `AGENT_FALLBACK_MODEL` fija el primero y
+ * `AGENT_FALLBACK_OTHER_MODEL` el segundo.
+ */
+export function readFallbacks(primary: { provider: AgentProvider; model: string }, env: Record<string, string | undefined> = process.env): FallbackModel[] {
+  const out: FallbackModel[] = []
+  const sameProvider = env.AGENT_FALLBACK_MODEL?.trim() || (primary.provider === "gemini" ? "gemini-2.5-flash-lite" : "")
+  if (sameProvider && sameProvider !== primary.model) out.push({ provider: primary.provider, model: sameProvider })
+  const other: AgentProvider = primary.provider === "gemini" ? "anthropic" : "gemini"
+  if (env[KEY_VAR[other]]?.trim()) {
+    // `AGENT_FALLBACK_OTHER_MODEL`: el modelo del otro proveedor (ej. un Haiku más nuevo) sin tocar código.
+    out.push({ provider: other, model: env.AGENT_FALLBACK_OTHER_MODEL?.trim() || DEFAULT_MODEL[other] })
+  }
+  return out
+}
+
 /**
  * Precios en USD por millón de tokens (entrada, salida), para estimar el
  * costo de cada corrida. Fuente: páginas oficiales al 23/09/2026. Es una

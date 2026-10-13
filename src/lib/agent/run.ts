@@ -1,7 +1,7 @@
 import "server-only"
-import { estimateCostUsd, readAgentConfig } from "./config"
+import { estimateCostUsd, readAgentConfig, readFallbacks } from "./config"
 import { providerFor } from "./providers"
-import type { ToolResult, TurnInput, Usage } from "./providers/types"
+import type { AgentEffort, ToolResult, TurnInput, Usage } from "./providers/types"
 import { executeTool, toolDefinitions, type ToolContext } from "./tools"
 import type { AgentActionKind, AgentSettings, Service, Staff } from "@/lib/domain/types"
 
@@ -43,9 +43,34 @@ export async function runAgent(args: {
   const config = readAgentConfig()
   if (!config.configured) return { ok: false, reason: config.reason }
 
-  const session = providerFor(config.provider).start({
-    model: config.model,
-    effort: config.effort,
+  // El webhook tiene 60 s para todo: no se prueba un respaldo si ya se gastó más de la mitad.
+  const startedAt = Date.now()
+  const candidates = [{ provider: config.provider, model: config.model }, ...readFallbacks(config)]
+  let lastFailure = ""
+
+  for (const [n, candidate] of candidates.entries()) {
+    if (n > 0 && Date.now() - startedAt > 30_000) break
+    const effort = candidate.provider === config.provider ? config.effort : null
+    const outcome = await runWith(candidate, effort, config.maxIterations, args)
+    if (outcome.ok) return outcome
+    lastFailure = outcome.reason
+    // Sólo se cambia de modelo si falló por servicio y todavía no se ejecutó ninguna herramienta
+    // (repetir una reserva ya hecha sería peor que derivar a una persona).
+    if (!outcome.retryable) return { ok: false, reason: outcome.reason }
+    console.warn(`[agente] ${candidate.model} falló (${outcome.reason}); se prueba el respaldo.`)
+  }
+  return { ok: false, reason: lastFailure }
+}
+
+async function runWith(
+  candidate: { provider: "gemini" | "anthropic"; model: string },
+  effort: AgentEffort | null,
+  maxIterations: number,
+  args: Parameters<typeof runAgent>[0]
+): Promise<AgentRunResult | { ok: false; reason: string; retryable: boolean }> {
+  const session = providerFor(candidate.provider).start({
+    model: candidate.model,
+    effort,
     system: args.systemPrompt,
     contextNote: args.contextNote,
     history: args.history,
@@ -57,14 +82,14 @@ export async function runAgent(args: {
   let clientId = args.toolContext.clientId
   let results: ToolResult[] | undefined
 
-  for (let i = 0; i < config.maxIterations; i++) {
+  for (let i = 0; i < maxIterations; i++) {
     const step = await session.next(results)
     usage.input += step.usage.input
     usage.output += step.usage.output
     usage.cacheRead += step.usage.cacheRead
     usage.cacheWrite += step.usage.cacheWrite
 
-    if (step.kind === "stop") return { ok: false, reason: step.reason }
+    if (step.kind === "stop") return { ok: false, reason: step.reason, retryable: !!step.transient && actions.length === 0 }
     if (step.kind === "reply") {
       return {
         ok: true,
@@ -72,9 +97,9 @@ export async function runAgent(args: {
         actions,
         clientId,
         usage,
-        provider: config.provider,
+        provider: candidate.provider,
         model: step.model,
-        costUsd: estimateCostUsd(config.model, usage),
+        costUsd: estimateCostUsd(candidate.model, usage),
       }
     }
 
@@ -87,5 +112,5 @@ export async function runAgent(args: {
     }
   }
 
-  return { ok: false, reason: "El agente dio demasiadas vueltas sin responder. Queda para una persona." }
+  return { ok: false, reason: "El agente dio demasiadas vueltas sin responder. Queda para una persona.", retryable: false }
 }

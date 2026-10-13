@@ -57,7 +57,8 @@ export type StepResult =
   | { kind: "tool_calls"; calls: ToolCall[]; usage: Usage }
   | { kind: "reply"; text: string; usage: Usage; model: string }
   /** Cualquier cosa que no sea una respuesta usable: error de red, rechazo, corte por largo. */
-  | { kind: "stop"; reason: string; usage: Usage }
+  /** `transient`: falla de servicio (sobrecarga, corte, límite) que otro modelo puede no tener. */
+  | { kind: "stop"; reason: string; usage: Usage; transient?: boolean }
 
 export interface SessionInput {
   model: string
