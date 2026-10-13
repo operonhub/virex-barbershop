@@ -28,8 +28,8 @@ describe("readAgentConfig", () => {
     if (!c.configured) expect(c.reason).toContain("ANTHROPIC_API_KEY")
   })
 
-  it("con Anthropic, Haiku 4.5 por defecto; AGENT_MODEL lo pisa", () => {
-    expect(readAgentConfig({ AGENT_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k" })).toMatchObject({ model: "claude-haiku-4-5" })
+  it("con Anthropic, Haiku 5.5 por defecto; AGENT_MODEL lo pisa", () => {
+    expect(readAgentConfig({ AGENT_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "k" })).toMatchObject({ model: "claude-haiku-5-5" })
     expect(readAgentConfig({ AGENT_PROVIDER: "Anthropic", ANTHROPIC_API_KEY: "k", AGENT_MODEL: "claude-sonnet-5" })).toMatchObject({ model: "claude-sonnet-5" })
   })
 
