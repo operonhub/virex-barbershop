@@ -19,7 +19,7 @@ let client: Anthropic | null = null
 const anthropic = () => (client ??= new Anthropic())
 
 export const usesServerFallbacks = (model: string) => /^claude-(opus-5$|fable-5)/.test(model)
-export const supportsEffort = (model: string) => !/^claude-(haiku|sonnet-4-5)/.test(model)
+export const supportsEffort = (model: string) => !/^claude-(haiku-4|sonnet-4-5)/.test(model)
 export const supportsMidConversationSystem = (model: string) => /^claude-(opus-(5|4-8)|fable|mythos)/.test(model)
 
 export function toAnthropicTools(tools: ToolSpec[]): Anthropic.Beta.BetaTool[] {

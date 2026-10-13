@@ -24,7 +24,7 @@ export const DEFAULT_PROVIDER: AgentProvider = "gemini"
 
 export const DEFAULT_MODEL: Record<AgentProvider, string> = {
   gemini: "gemini-3.5-flash-lite",
-  anthropic: "claude-haiku-4-5",
+  anthropic: "claude-haiku-5-5",
 }
 
 const KEY_VAR: Record<AgentProvider, string> = {
@@ -98,6 +98,7 @@ const PRICES: Record<string, { input: number; output: number }> = {
   "gemini-3.5-flash-lite": { input: 0.3, output: 2.5 },
   "gemini-3.5-flash": { input: 1.5, output: 9 },
   "gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
+  "claude-haiku-5-5": { input: 0.1, output: 0.5 }, // la doc dice "desde": si hay tramos, la estimación queda por debajo
   "claude-haiku-4-5": { input: 1, output: 5 },
   "claude-sonnet-5": { input: 2, output: 10 },
   "claude-opus-5": { input: 5, output: 25 },

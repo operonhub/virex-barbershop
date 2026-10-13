@@ -11,7 +11,7 @@ describe("readFallbacks", () => {
   it("con clave de Anthropic suma Claude como segundo respaldo", () => {
     expect(readFallbacks(gemini, { ANTHROPIC_API_KEY: "x" })).toEqual([
       { provider: "gemini", model: "gemini-3.5-flash" },
-      { provider: "anthropic", model: "claude-haiku-4-5" },
+      { provider: "anthropic", model: "claude-haiku-5-5" },
     ])
   })
 
