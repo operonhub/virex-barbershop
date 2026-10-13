@@ -79,8 +79,9 @@ export interface FallbackModel {
  */
 export function readFallbacks(primary: { provider: AgentProvider; model: string }, env: Record<string, string | undefined> = process.env): FallbackModel[] {
   const out: FallbackModel[] = []
-  const sameProvider = env.AGENT_FALLBACK_MODEL?.trim() || (primary.provider === "gemini" ? "gemini-3.5-flash" : "")
-  if (sameProvider && sameProvider !== primary.model) out.push({ provider: primary.provider, model: sameProvider })
+  // Varios del mismo proveedor, en orden, sin repetir el principal: si el principal ya es el primero de la lista, entra el siguiente.
+  const sameProvider = env.AGENT_FALLBACK_MODEL?.trim() ? [env.AGENT_FALLBACK_MODEL.trim()] : primary.provider === "gemini" ? ["gemini-3.5-flash", "gemini-2.5-flash"] : []
+  for (const model of sameProvider) if (model !== primary.model) out.push({ provider: primary.provider, model })
   const other: AgentProvider = primary.provider === "gemini" ? "anthropic" : "gemini"
   if (env[KEY_VAR[other]]?.trim()) {
     // `AGENT_FALLBACK_OTHER_MODEL`: el modelo del otro proveedor (ej. un Haiku más nuevo) sin tocar código.

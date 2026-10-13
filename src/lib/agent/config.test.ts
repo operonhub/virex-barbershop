@@ -5,12 +5,16 @@ describe("readFallbacks", () => {
   const gemini = { provider: "gemini" as const, model: "gemini-3.5-flash-lite" }
 
   it("sin claves extra, respalda con otro modelo de Gemini", () => {
-    expect(readFallbacks(gemini, {})).toEqual([{ provider: "gemini", model: "gemini-3.5-flash" }])
+    expect(readFallbacks(gemini, {})).toEqual([
+      { provider: "gemini", model: "gemini-3.5-flash" },
+      { provider: "gemini", model: "gemini-2.5-flash" },
+    ])
   })
 
   it("con clave de Anthropic suma Claude como segundo respaldo", () => {
     expect(readFallbacks(gemini, { ANTHROPIC_API_KEY: "x" })).toEqual([
       { provider: "gemini", model: "gemini-3.5-flash" },
+      { provider: "gemini", model: "gemini-2.5-flash" },
       { provider: "anthropic", model: "claude-haiku-5-5" },
     ])
   })
@@ -23,6 +27,6 @@ describe("readFallbacks", () => {
   })
 
   it("no repite el modelo principal como respaldo", () => {
-    expect(readFallbacks({ provider: "gemini", model: "gemini-3.5-flash" }, {})).toEqual([])
+    expect(readFallbacks({ provider: "gemini", model: "gemini-3.5-flash" }, {})).toEqual([{ provider: "gemini", model: "gemini-2.5-flash" }])
   })
 })
