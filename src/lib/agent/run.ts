@@ -46,20 +46,21 @@ export async function runAgent(args: {
   // El webhook tiene 60 s para todo: no se prueba un respaldo si ya se gastó más de la mitad.
   const startedAt = Date.now()
   const candidates = [{ provider: config.provider, model: config.model }, ...readFallbacks(config)]
-  let lastFailure = ""
+  let firstFailure = ""
 
   for (const [n, candidate] of candidates.entries()) {
     if (n > 0 && Date.now() - startedAt > 30_000) break
     const effort = candidate.provider === config.provider ? config.effort : null
     const outcome = await runWith(candidate, effort, config.maxIterations, args)
     if (outcome.ok) return outcome
-    lastFailure = outcome.reason
+    if (!firstFailure) firstFailure = outcome.reason
     // Sólo se cambia de modelo si falló por servicio y todavía no se ejecutó ninguna herramienta
     // (repetir una reserva ya hecha sería peor que derivar a una persona).
-    if (!outcome.retryable) return { ok: false, reason: outcome.reason }
+    // Si ya falló el principal, el motivo que se muestra es el suyo: el error de un respaldo es ruido.
+    if (!outcome.retryable) return { ok: false, reason: firstFailure || outcome.reason }
     console.warn(`[agente] ${candidate.model} falló (${outcome.reason}); se prueba el respaldo.`)
   }
-  return { ok: false, reason: lastFailure }
+  return { ok: false, reason: firstFailure }
 }
 
 async function runWith(

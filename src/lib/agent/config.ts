@@ -72,14 +72,14 @@ export interface FallbackModel {
 
 /**
  * Modelos de respaldo, en orden, para cuando el principal está sobrecargado
- * (503/504/límite). Primero otro modelo del MISMO proveedor (la capacidad es
+ * (503/504/límite). Primero otro modelo del MISMO proveedor (probado con la clave: un modelo que figura en la lista puede dar 404, ej. gemini-2.5-flash-lite) (la capacidad es
  * por modelo, así que suele andar aunque el otro esté caído) y después, si hay
  * clave, el otro proveedor. `AGENT_FALLBACK_MODEL` fija el primero y
  * `AGENT_FALLBACK_OTHER_MODEL` el segundo.
  */
 export function readFallbacks(primary: { provider: AgentProvider; model: string }, env: Record<string, string | undefined> = process.env): FallbackModel[] {
   const out: FallbackModel[] = []
-  const sameProvider = env.AGENT_FALLBACK_MODEL?.trim() || (primary.provider === "gemini" ? "gemini-2.5-flash-lite" : "")
+  const sameProvider = env.AGENT_FALLBACK_MODEL?.trim() || (primary.provider === "gemini" ? "gemini-3.5-flash" : "")
   if (sameProvider && sameProvider !== primary.model) out.push({ provider: primary.provider, model: sameProvider })
   const other: AgentProvider = primary.provider === "gemini" ? "anthropic" : "gemini"
   if (env[KEY_VAR[other]]?.trim()) {
