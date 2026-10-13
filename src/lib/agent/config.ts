@@ -84,8 +84,10 @@ export function readFallbacks(primary: { provider: AgentProvider; model: string 
   for (const model of sameProvider) if (model !== primary.model) out.push({ provider: primary.provider, model })
   const other: AgentProvider = primary.provider === "gemini" ? "anthropic" : "gemini"
   if (env[KEY_VAR[other]]?.trim()) {
-    // `AGENT_FALLBACK_OTHER_MODEL`: el modelo del otro proveedor (ej. un Haiku más nuevo) sin tocar código.
-    out.push({ provider: other, model: env.AGENT_FALLBACK_OTHER_MODEL?.trim() || DEFAULT_MODEL[other] })
+    // `AGENT_FALLBACK_OTHER_MODEL`: el modelo del otro proveedor, sin tocar código. Si el principal es Claude, el
+    // respaldo de Gemini es el 3.5 Flash (no el lite por defecto, que hoy tarda hasta 60 s).
+    const model = env.AGENT_FALLBACK_OTHER_MODEL?.trim() || (other === "gemini" ? "gemini-3.5-flash" : DEFAULT_MODEL[other])
+    out.push({ provider: other, model })
   }
   return out
 }

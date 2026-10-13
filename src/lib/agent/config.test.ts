@@ -29,4 +29,10 @@ describe("readFallbacks", () => {
   it("no repite el modelo principal como respaldo", () => {
     expect(readFallbacks({ provider: "gemini", model: "gemini-3.5-flash" }, {})).toEqual([{ provider: "gemini", model: "gemini-2.5-flash" }])
   })
+
+  it("con Claude como principal, respalda con Gemini 3.5 Flash si hay clave", () => {
+    const claude = { provider: "anthropic" as const, model: "claude-haiku-5-5" }
+    expect(readFallbacks(claude, {})).toEqual([])
+    expect(readFallbacks(claude, { GEMINI_API_KEY: "x" })).toEqual([{ provider: "gemini", model: "gemini-3.5-flash" }])
+  })
 })
