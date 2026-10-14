@@ -38,6 +38,7 @@ export function AgentPlayground({
 }) {
   const [lines, setLines] = useState<Line[]>([])
   const [draft, setDraft] = useState("")
+  const [clientId, setClientId] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const endRef = useRef<HTMLDivElement>(null)
 
@@ -55,7 +56,8 @@ export function AgentPlayground({
       const history = next
         .filter((l): l is Exclude<Line, { role: "error" }> => l.role !== "error")
         .map((l) => ({ role: l.role, text: l.text }))
-      const res = await testAgent(history)
+      const res = await testAgent(history, clientId)
+      if (res.ok) setClientId(res.clientId)
       setLines((cur) => [
         ...cur,
         res.ok
@@ -77,7 +79,14 @@ export function AgentPlayground({
           </p>
         </div>
         {lines.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={() => setLines([])}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setLines([])
+              setClientId(null)
+            }}
+          >
             <RotateCcw /> Reiniciar
           </Button>
         )}

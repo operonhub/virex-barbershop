@@ -17,8 +17,8 @@ import type { AgentActionKind } from "@/lib/domain/types"
  * derivaciones. En la demo en memoria sí agenda, para mostrarle al dueño el
  * turno apareciendo en la agenda.
  */
-export async function testAgent(history: TurnInput[]): Promise<
-  | { ok: true; reply: string; action: AgentActionKind | null; tokens: number; model: string; costUsd: number | null; dryRun: boolean }
+export async function testAgent(history: TurnInput[], clientId: string | null = null): Promise<
+  | { ok: true; reply: string; action: AgentActionKind | null; tokens: number; model: string; costUsd: number | null; dryRun: boolean; clientId: string | null }
   | { ok: false; reason: string }
 > {
   await assertPanelSession()
@@ -27,7 +27,10 @@ export async function testAgent(history: TurnInput[]): Promise<
   }
   const s = await db()
   const now = await clockNow()
-  const conv = { clientId: null, channel: "whatsapp" as const, participantName: "Cliente de prueba" }
+  // El cliente se recuerda entre mensajes (como en WhatsApp, donde la conversación queda asociada al
+  // cliente al agendar): así el agente ve el turno que acaba de crear en "Turnos agendados".
+  const known = clientId && s.clients.some((c) => c.id === clientId) ? clientId : null
+  const conv = { clientId: known, channel: "whatsapp" as const, participantName: "Cliente de prueba" }
   const dryRun = store().kind === "postgres"
 
   const result = await runAgent({
@@ -37,7 +40,7 @@ export async function testAgent(history: TurnInput[]): Promise<
     history,
     systemPrompt: buildSystemPrompt(s.agentSettings, s.services, s.staff, s.shopSettings),
     contextNote: await buildContextFor(conv, now),
-    toolContext: { conversationId: null, clientId: null, participantName: conv.participantName, channel: "whatsapp", now, dryRun },
+    toolContext: { conversationId: null, clientId: known, participantName: conv.participantName, channel: "whatsapp", now, dryRun },
   })
   if (!result.ok) return result
 
@@ -51,5 +54,6 @@ export async function testAgent(history: TurnInput[]): Promise<
     model: result.model,
     costUsd: result.costUsd,
     dryRun,
+    clientId: result.clientId,
   }
 }

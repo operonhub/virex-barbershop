@@ -34,6 +34,19 @@ describe("clientAgreedTo", () => {
     expect(clientAgreedTo("13:00", [u("el sábado a las 2?"), a("Tengo 13:00 o 19:00"), u("dale")])).toBe(true)
   })
 
+  it("vale una hora en punto ofrecida como \"a las 18\" (caso real: dos turnos para amigos)", () => {
+    const h = [u("dos turnos mañana"), a("Mañana a las 18 tengo un lugar con Sebastián, y el otro a las 19. ¿Te sirve?"), u("dale, esos")]
+    expect(clientAgreedTo("18:00", h)).toBe(true)
+    expect(clientAgreedTo("19:00", h)).toBe(true)
+    expect(clientAgreedTo("18:30", h)).toBe(false)
+    expect(clientAgreedTo("17:00", h)).toBe(false)
+    expect(clientAgreedTo("18:00", [u("hola"), a("Tengo a las 18.30"), u("dale")])).toBe(false)
+  })
+
+  it("una fecha no cuenta como hora ofrecida", () => {
+    expect(clientAgreedTo("18:00", [u("hola"), a("El jueves 18/10 tengo 15:00"), u("dale")])).toBe(false)
+  })
+
   it("una oferta sin respuesta del cliente no alcanza", () => {
     expect(clientAgreedTo("19:00", [u("el sábado a las 2?"), a("Tengo 19:00")])).toBe(false)
   })

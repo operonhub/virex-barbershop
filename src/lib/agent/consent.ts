@@ -50,6 +50,11 @@ export function hoursMentioned(text: string): number[] {
 const toOpenHour = (h: number) => (h >= 1 && h <= 8 ? h + 12 : h)
 
 function offersTime(text: string, hora: string) {
-  const h = Number(hora.slice(0, 2))
-  return text.includes(hora) || new RegExp(`(?<!\\d)${h}\\s?(hs|h)\\b`, "i").test(text)
+  if (text.includes(hora)) return true
+  const [hh, mm] = hora.split(":")
+  if (mm !== "00") return false
+  // Una hora en punto también se ofrece como "18hs", "a las 18" o "a las 6" (el local abre de 11 a 20).
+  const h = Number(hh)
+  const forms = [String(h), ...(h > 12 && h <= 20 ? [String(h - 12)] : [])].join("|")
+  return new RegExp(`(?<!\\d)(${forms})\\s?(hs|h)\\b|\\blas?\\s+(${forms})(?![\\d:/]|\\.\\d)`, "i").test(text)
 }
