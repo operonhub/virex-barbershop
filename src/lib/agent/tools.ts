@@ -29,6 +29,8 @@ export interface ToolContext {
   conversationId: string | null
   clientId: string | null
   participantName: string
+  /** Por WhatsApp es el número del cliente: el agente no se lo tiene que pedir. */
+  participantHandle?: string | null
   channel: Channel
   now: Date
   /** La conversación hasta el último mensaje del cliente: para saber qué pidió o aceptó. */
@@ -81,7 +83,7 @@ export function toolDefinitions(services: Service[], staff: Staff[]): ToolSpec[]
     {
       name: "crear_turno",
       description:
-        "Agenda un turno confirmado. Sólo cuando el cliente ya eligió servicio, fecha y hora. Usá barbero_id 'cualquiera' si no pidió uno por nombre: el sistema reparte entre los libres. Si no es cliente registrado, pasá su nombre y teléfono.",
+        "Agenda un turno confirmado. Sólo cuando el cliente ya eligió servicio, fecha y hora. Usá barbero_id 'cualquiera' si no pidió uno por nombre: el sistema reparte entre los libres. Por WhatsApp el teléfono ya lo tiene el sistema: dejá telefono vacío y no se lo pidas.",
       parameters: {
         type: "object",
         properties: {
@@ -90,7 +92,7 @@ export function toolDefinitions(services: Service[], staff: Staff[]): ToolSpec[]
           servicio_id: { type: "string", enum: serviceIds },
           barbero_id: { type: "string", enum: [...staffIds, "cualquiera"] },
           nombre_cliente: { type: "string", description: "Nombre y apellido si se conoce." },
-          telefono: { type: "string", description: "Teléfono del cliente, o cadena vacía si no se sabe." },
+          telefono: { type: "string", description: "Sólo si el cliente lo dio por Instagram. Por WhatsApp, cadena vacía." },
         },
         required: ["fecha", "hora", "servicio_id", "barbero_id", "nombre_cliente", "telefono"],
         additionalProperties: false,
@@ -263,7 +265,10 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
             ? undefined
             : {
                 name: String(input.nombre_cliente || ctx.participantName).trim().slice(0, 80),
-                phone: String(input.telefono || "").replace(/[^\d+]/g, "") || null,
+                // Por WhatsApp el número ya lo tenemos: no depende de que el modelo lo pregunte.
+                phone:
+                  String(input.telefono || "").replace(/[^\d+]/g, "") ||
+                  (ctx.channel === "whatsapp" ? ctx.participantHandle?.replace(/[^\d+]/g, "") || null : null),
                 channel: ctx.channel,
                 notes: "Creado por el agente IA.",
                 preferredStaffId: anyStaff ? null : m.id,

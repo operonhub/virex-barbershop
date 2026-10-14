@@ -8,6 +8,7 @@ import { buildContextNote, buildSystemPrompt } from "./prompt"
 import { runAgent, type TurnInput } from "./run"
 import { readAgentConfig } from "./config"
 import { shouldHandOff } from "./handoff"
+import { createConversationQueue } from "./conversation-queue"
 import type { AgentActionKind, Conversation } from "@/lib/domain/types"
 
 /**
@@ -78,7 +79,16 @@ export async function ingestInboxEvent(event: Extract<NormalizedEvent, { kind: "
   return inbound ? conv.id : null
 }
 
-export async function respondToConversation(conversationId: string): Promise<{ ok: boolean; reason?: string }> {
+/** Cuánto se espera por si el cliente sigue escribiendo, y de a una corrida por conversación: ver `conversation-queue.ts`. */
+const SETTLE_MS = 4_000
+
+export const respondToConversation = createConversationQueue<{ ok: boolean; reason?: string }>(
+  (id) => respondNow(id),
+  { ok: true },
+  SETTLE_MS
+)
+
+async function respondNow(conversationId: string): Promise<{ ok: boolean; reason?: string }> {
   const s = await db()
   const conv = s.conversations.find((c) => c.id === conversationId)
   if (!conv) return { ok: false, reason: "Conversación inexistente." }
@@ -140,7 +150,7 @@ export async function respondToConversation(conversationId: string): Promise<{ o
     history,
     systemPrompt: buildSystemPrompt(s.agentSettings, s.services, s.staff, s.shopSettings),
     contextNote: await buildContextFor(conv, now),
-    toolContext: { conversationId: conv.id, clientId: conv.clientId, participantName: conv.participantName, channel: conv.channel, now },
+    toolContext: { conversationId: conv.id, clientId: conv.clientId, participantName: conv.participantName, participantHandle: conv.participantHandle, channel: conv.channel, now },
   })
 
   await store()
