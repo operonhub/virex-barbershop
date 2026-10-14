@@ -134,6 +134,21 @@ export const memoryStore: Store = {
     state().payments.push({ ...payment, id: newId("co") })
   },
 
+  async addLoyaltyStamp({ clientId, serviceId, concept, paidAt }) {
+    state().payments.push({
+      id: newId("co"), appointmentId: null, clientId, staffId: null, serviceId, concept, kind: "servicio",
+      listPrice: 0, discount: 0, discountReason: null, tip: 0, amount: 0, method: "efectivo", paidAt, imported: true, units: 0,
+    })
+  },
+
+  async removeLoyaltyStamp(paymentId) {
+    const s = state()
+    const i = s.payments.findIndex((p) => p.id === paymentId && p.imported && p.amount === 0 && p.kind === "servicio")
+    if (i === -1) return false
+    s.payments.splice(i, 1)
+    return true
+  },
+
   async updateAgentSettings(patch) {
     const s = state()
     s.agentSettings = { ...s.agentSettings, ...patch }

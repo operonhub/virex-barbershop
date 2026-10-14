@@ -400,6 +400,19 @@ export const postgresStore: Store = {
               ${p.discount}, ${p.discountReason}, ${p.tip}, ${p.amount}, ${p.method}, ${p.paidAt})`
   },
 
+  async addLoyaltyStamp({ clientId, serviceId, concept, paidAt }) {
+    const sql = sqlClient()
+    await sql`
+      insert into payments (client_id, service_id, concept, kind, list_price, amount, method, paid_at, imported, units)
+      values (${clientId}, ${serviceId}, ${concept}, 'servicio', 0, 0, 'efectivo', ${paidAt}, true, 0)`
+  },
+
+  async removeLoyaltyStamp(paymentId) {
+    const sql = sqlClient()
+    const rows = await sql`delete from payments where id = ${paymentId} and imported and amount = 0 and kind = 'servicio' returning id`
+    return rows.length > 0
+  },
+
   async updateAgentSettings(patch) {
     const sql = sqlClient()
     const row: Record<string, unknown> = { updated_at: new Date() }

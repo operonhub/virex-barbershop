@@ -167,6 +167,11 @@ public/intro-boot.js        Decide antes del primer pintado si corre la intro.
   `tstzrange(starts_at, ends_at, '[)')` por barbero; cancelados y no-show liberan la silla).
 - **La fidelidad se deriva de los pagos**, no se guarda un contador. El descuento lo recalcula
   el servidor al cobrar (`chargeAppointment`), nunca lo decide la pantalla.
+  El equipo corrige la tarjeta desde la ficha del cliente (`adjustLoyalty`): sumar un sello crea un
+  cobro de $0 marcado `imported` (como las tarjetas de cartón); sacar sólo borra esos sellos de $0
+  (`removableStamp`), nunca un corte cobrado.
+- **Dueños:** rol `dueno` con comisión 0 (interruptor "Es dueño" en Ajustes → Equipo). Las finanzas
+  los tratan aparte: no cobran comisión ni tienen "a pagar"; su facturación queda en la casa.
 - **"Ahora" sale de `now()` de `repo.ts`:** con la base es la hora real; en la demo, con el
   local cerrado, simula el último día hábil a las 16:40 (`demoClock`). No usar `new Date()` para
   cuentas relativas al presente.

@@ -149,6 +149,15 @@ export interface Store {
   /** Cobro suelto sin turno (una bebida, un producto). */
   addPayment(payment: NewPayment): Promise<void>
 
+  /**
+   * Sello de fidelidad cargado a mano (cortes de la tarjeta de cartón, correcciones): un cobro de $0
+   * marcado `imported`, igual que los que cargó `scripts/importar-tarjetas.mjs`. No suma plata ni cortes.
+   */
+  addLoyaltyStamp(stamp: { clientId: string; serviceId: string; concept: string; paidAt: string }): Promise<void>
+
+  /** Borra un sello de $0 importado o cargado a mano. Nunca toca un cobro con plata: devuelve false. */
+  removeLoyaltyStamp(paymentId: string): Promise<boolean>
+
   updateAgentSettings(patch: Partial<AgentSettings>): Promise<void>
 
   /** Busca la conversación por su id en Zernio; si no existe, la crea. */

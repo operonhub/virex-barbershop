@@ -53,7 +53,11 @@ export async function saveService(input: {
   return { ok: true }
 }
 
-export async function saveStaff(input: { id?: string; name: string; commissionPct: number; active: boolean }): Promise<Result> {
+/**
+ * Datos de una persona del equipo. `owner`: es dueño (rol "dueno", comisión 0). Las finanzas tratan a
+ * los dueños aparte: no cobran comisión ni tienen saldo "a pagar", su facturación va al resultado del local.
+ */
+export async function saveStaff(input: { id?: string; name: string; commissionPct: number; active: boolean; owner?: boolean }): Promise<Result> {
   await assertPanelSession()
   const name = String(input.name ?? "").trim().slice(0, 40)
   const commissionPct = Math.round(Number(input.commissionPct))
@@ -68,7 +72,12 @@ export async function saveStaff(input: { id?: string; name: string; commissionPc
     ).length
     if (upcoming) return { ok: false, error: `${current.name} tiene ${upcoming} turno${upcoming === 1 ? "" : "s"} por delante. Movelos antes de darlo de baja.` }
   }
-  await store().saveStaff({ id: input.id, name, role: current?.role ?? "barbero", commissionPct, active: !!input.active })
+  const owner = input.owner ?? current?.role === "dueno"
+  if (current?.role === "dueno" && !owner && !s.staff.some((m) => m.id !== current.id && m.role === "dueno")) {
+    return { ok: false, error: "Tiene que quedar al menos un dueño." }
+  }
+  const role = owner ? "dueno" : current?.role === "dueno" ? "barbero" : (current?.role ?? "barbero")
+  await store().saveStaff({ id: input.id, name, role, commissionPct: owner ? 0 : commissionPct, active: owner ? true : !!input.active })
   refresh()
   return { ok: true }
 }

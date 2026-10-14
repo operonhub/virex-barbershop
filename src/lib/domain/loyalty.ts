@@ -65,3 +65,29 @@ export function loyaltyDiscount(status: LoyaltyStatus, service: Service): number
   if (!status.rewardReady || !service.countsForLoyalty) return 0
   return Math.round((service.price * BRAND.loyalty.rewardDiscountPct) / 100)
 }
+
+/**
+ * El sello que se puede sacar a mano: el último del ciclo actual que sea de $0 importado o cargado a
+ * mano (tarjeta de cartón, corrección). Los sellos de cortes cobrados no se tocan desde la tarjeta:
+ * para eso se anula el cobro. `null` si no hay ninguno.
+ */
+export function removableStamp(clientId: string, payments: Payment[], services: Service[]): string | null {
+  const status = loyaltyStatus(clientId, payments, services)
+  if (!status.stamps) return null
+  const counts = new Set(services.filter((s) => s.countsForLoyalty).map((s) => s.id))
+  const cycleStart = status.stampDates[0]
+  const candidate = payments
+    .filter(
+      (p) =>
+        p.clientId === clientId &&
+        p.kind === "servicio" &&
+        p.imported &&
+        p.amount === 0 &&
+        !!p.serviceId &&
+        counts.has(p.serviceId) &&
+        p.discountReason !== "fidelidad" &&
+        p.paidAt >= cycleStart
+    )
+    .sort((a, b) => b.paidAt.localeCompare(a.paidAt))[0]
+  return candidate?.id ?? null
+}

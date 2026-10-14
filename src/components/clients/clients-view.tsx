@@ -1,8 +1,10 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { CalendarPlus, Phone, Search, StickyNote } from "lucide-react"
+import { CalendarPlus, Minus, Phone, Plus, Search, StickyNote } from "lucide-react"
+import { toast } from "sonner"
+import { adjustLoyalty } from "@/lib/data/actions"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ChannelDot } from "@/components/brand/channel-icons"
@@ -222,7 +224,10 @@ function ClientSheet({
             </SheetHeader>
 
             <div className="space-y-6 px-6 pb-8">
-              <LoyaltyCard status={row.loyalty} clientName={row.client.name.split(" ")[0]} />
+              <div className="space-y-2">
+                <LoyaltyCard status={row.loyalty} clientName={row.client.name.split(" ")[0]} />
+                <LoyaltyAdjust clientId={row.client.id} status={row.loyalty} />
+              </div>
 
               <dl className="grid grid-cols-3 gap-3">
                 <Stat label="Visitas" value={String(row.visits)} />
@@ -288,6 +293,53 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-line bg-surface-1 px-3 py-2.5">
       <dt className="eyebrow text-[10px]">{label}</dt>
       <dd className="num mt-1 font-wide text-[16px] font-semibold text-ivory">{value}</dd>
+    </div>
+  )
+}
+
+/**
+ * Corregir la tarjeta a mano: sumar los cortes que el cliente traía en la tarjeta de cartón, o sacar
+ * uno cargado de más. El servidor decide qué se puede sacar (nunca un corte cobrado).
+ */
+function LoyaltyAdjust({ clientId, status }: { clientId: string; status: LoyaltyStatus }) {
+  const [pending, startTransition] = useTransition()
+
+  function change(delta: 1 | -1) {
+    startTransition(async () => {
+      const res = await adjustLoyalty(clientId, delta)
+      if (!res.ok) toast.error(res.error)
+      else toast.success(delta === 1 ? "Sello sumado" : "Sello sacado")
+    })
+  }
+
+  return (
+    <div className="flex max-w-[420px] items-center justify-between gap-3 rounded-xl border border-line px-3 py-2">
+      <span className="text-[12.5px] leading-snug text-ivory-3">¿Traía cortes en la tarjeta de cartón? Ajustá los sellos.</span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-9"
+          aria-label="Sacar un sello"
+          disabled={pending || status.stamps === 0}
+          onClick={() => change(-1)}
+        >
+          <Minus />
+        </Button>
+        <span className="num w-9 text-center text-[14px] font-semibold text-ivory">
+          {status.stamps}/{status.required}
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-9"
+          aria-label="Sumar un sello"
+          disabled={pending || status.rewardReady}
+          onClick={() => change(1)}
+        >
+          <Plus />
+        </Button>
+      </span>
     </div>
   )
 }

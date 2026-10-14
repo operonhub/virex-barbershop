@@ -9,7 +9,7 @@ import { startDepositCheckout } from "@/lib/mercadopago/deposit"
 import { at, dayKey } from "@/lib/time"
 import { formatARS } from "@/lib/money"
 import { checkManualBooking, checkStaffTransfer, earlyFinishEnd, freeSlots, placeFinishedWalkIn } from "@/lib/domain/slots"
-import { loyaltyDiscount, loyaltyStatus } from "@/lib/domain/loyalty"
+import { loyaltyDiscount, loyaltyStatus, removableStamp } from "@/lib/domain/loyalty"
 import type {
   AgentSettings,
   AppointmentSource,
@@ -646,4 +646,33 @@ export async function listFreeSlots(day: string, serviceId: string, staffId: str
     // hora (alguien que cae de pasada). La grilla en punto es para el agente y la web.
     stepMin: 15,
   })
+}
+
+/**
+ * Corrige la tarjeta de fidelidad a mano: sumar los cortes que el cliente ya tenía en la tarjeta de
+ * cartón, o sacar uno cargado de más. El sello es un cobro de $0 marcado `imported` (como los que cargó
+ * `importar-tarjetas.mjs`): la fidelidad se sigue derivando de los cobros y no se toca la plata.
+ * Sólo se sacan sellos cargados así; los de cortes cobrados se corrigen anulando el cobro.
+ */
+export async function adjustLoyalty(clientId: string, delta: 1 | -1): Promise<Result> {
+  await assertPanelSession()
+  const s = await db()
+  if (!s.clients.some((c) => c.id === clientId)) return { ok: false, error: "No encontré a ese cliente." }
+  const status = loyaltyStatus(clientId, s.payments, s.services)
+
+  if (delta === 1) {
+    if (status.rewardReady) return { ok: false, error: "La tarjeta ya está completa: el próximo corte va con el descuento." }
+    const loyaltyServices = s.services.filter((x) => x.countsForLoyalty)
+    const service = loyaltyServices.find((x) => x.name.toLowerCase() === "corte") ?? loyaltyServices[0]
+    if (!service) return { ok: false, error: "No hay ningún servicio que sume sello." }
+    await store().addLoyaltyStamp({ clientId, serviceId: service.id, concept: "Ajuste manual · tarjeta de fidelidad", paidAt: (await now()).toISOString() })
+  } else {
+    if (!status.stamps) return { ok: false, error: "La tarjeta está vacía." }
+    const id = removableStamp(clientId, s.payments, s.services)
+    if (!id || !(await store().removeLoyaltyStamp(id))) {
+      return { ok: false, error: "Los sellos que quedan son de cortes cobrados: para sacarlos hay que anular el cobro." }
+    }
+  }
+  refresh()
+  return { ok: true }
 }

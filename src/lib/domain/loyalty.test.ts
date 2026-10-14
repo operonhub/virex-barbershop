@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { loyaltyDiscount, loyaltyStatus } from "./loyalty"
+import { loyaltyDiscount, loyaltyStatus, removableStamp } from "./loyalty"
 import type { Payment, Service } from "./types"
 
 const services: Service[] = [
@@ -38,5 +38,28 @@ describe("tarjeta de fidelidad (5 cortes → el 6to al 50%)", () => {
     // Turno con seña: llega el pago "sena" al reservar y después el "servicio" al cobrar el resto.
     const st = loyaltyStatus("c1", [pay("corte", false, "sena"), pay("corte")], services)
     expect(st.stamps).toBe(1)
+  })
+})
+
+describe("sacar un sello a mano", () => {
+  const cobrado = (): Payment => ({ ...pay("corte"), amount: 14000, listPrice: 14000 })
+  const cargado = (): Payment => ({ ...pay("corte"), imported: true })
+
+  it("saca el último sello cargado a mano del ciclo actual", () => {
+    const history = [cobrado(), cargado(), cargado()]
+    expect(removableStamp("c1", history, services)).toBe(history[2].id)
+  })
+
+  it("no saca sellos de cortes cobrados", () => {
+    expect(removableStamp("c1", [cobrado(), cobrado()], services)).toBeNull()
+  })
+
+  it("no toca sellos de un ciclo ya cerrado con el premio", () => {
+    const history = [cargado(), pay("corte", true), cobrado()]
+    expect(removableStamp("c1", history, services)).toBeNull()
+  })
+
+  it("con la tarjeta vacía no hay nada que sacar", () => {
+    expect(removableStamp("c1", [], services)).toBeNull()
   })
 })

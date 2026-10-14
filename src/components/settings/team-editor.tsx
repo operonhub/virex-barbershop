@@ -318,14 +318,15 @@ function TimeOffDialog({ member, today, onClose }: { member: Staff; today: strin
 
 function StaffDialog({ member, onClose }: { member: Partial<Staff>; onClose: () => void }) {
   const [name, setName] = useState(member.name ?? "")
-  const [commission, setCommission] = useState(String(member.commissionPct ?? 50))
+  // Si deja de ser dueño, arranca en 50 % (su comisión de dueño es 0) y la ajustan ahí mismo.
+  const [commission, setCommission] = useState(String(member.role === "dueno" ? 50 : (member.commissionPct ?? 50)))
   const [active, setActive] = useState(member.active ?? true)
+  const [owner, setOwner] = useState(member.role === "dueno")
   const [pending, startTransition] = useTransition()
-  const owner = member.role === "dueno"
 
   function submit() {
     startTransition(async () => {
-      const res = await saveStaff({ id: member.id, name, commissionPct: owner ? 0 : Number(commission), active })
+      const res = await saveStaff({ id: member.id, name, commissionPct: owner ? 0 : Number(commission), active, owner })
       if (!res.ok) return void toast.error(res.error)
       toast.success(member.id ? "Datos guardados" : `${name.trim()} ya está en el equipo`)
       onClose()
@@ -364,6 +365,7 @@ function StaffDialog({ member, onClose }: { member: Partial<Staff>; onClose: () 
               </span>
             </label>
           )}
+          <Toggle label="Es dueño (no cobra comisión: lo que factura va al resultado del local)" checked={owner} onChange={setOwner} />
           {member.id && !owner && <Toggle label="Atiende (si lo apagás, deja de aparecer para agendar)" checked={active} onChange={setActive} />}
           <Button size="lg" className="h-10 w-full font-semibold" disabled={pending} onClick={submit}>
             {pending ? "Guardando…" : "Guardar"}
