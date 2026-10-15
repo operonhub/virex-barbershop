@@ -208,7 +208,7 @@ export type ConversationMode = "ia" | "humano"
 
 export interface Conversation {
   id: string
-  /** Id de la conversación en Zernio (para responder). En la demo coincide con `id`. */
+  /** Id de la conversación en Zernio; se usa junto con `accountExternalId` para responder. */
   externalId?: string | null
   /** Cuenta de Zernio (el WhatsApp o el Instagram del local) por la que entró. */
   accountExternalId?: string | null

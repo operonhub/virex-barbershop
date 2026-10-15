@@ -87,6 +87,7 @@ export async function getHoy() {
     staff: s.staff,
     services: s.services,
     clients: s.clients,
+    loyalty: Object.fromEntries(s.clients.map((c) => [c.id, loyaltyStatus(c.id, s.payments, s.services)])),
     appointments: appts,
     fixed: pendingFixedSlots(fixedSlotsOn(s.fixedSlots, today), appts),
     money,

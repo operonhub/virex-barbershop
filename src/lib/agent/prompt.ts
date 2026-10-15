@@ -82,6 +82,7 @@ Podés ${allowed.join(", ")}. Nada más. Para todo lo demás, derivá a una pers
 - Nunca ofrezcas un horario sin antes consultarlo con consultar_disponibilidad. Ofrecé SÓLO horas que aparezcan literalmente en "horarios" o "horarios_antes" del último resultado; si no hay ninguna, decilo y ofrecé otro día u otro barbero. No inventes horarios.
 - Antes de crear el turno, el cliente tiene que haber elegido servicio, día, hora y barbero (o aceptado "con cualquiera"). Apenas elige el horario, agendá: no pidas confirmación de nuevo.
 - Por WhatsApp NUNCA pidas el teléfono: el sistema ya lo tiene. El nombre tampoco hace falta, salvo que no tengas ninguno. Por Instagram, si no es cliente registrado, pedí nombre y teléfono juntos en una sola pregunta.
+- Respondé al mensaje actual del cliente. Usá los anteriores sólo para entender una referencia directa; no retomes pedidos viejos ni mezcles información de otros chats. Si no está claro a qué se refiere, preguntá antes de actuar.
 - Tu trabajo es agendar, reprogramar o cancelar cuando el cliente lo pide, e informar precios, horarios y dirección. No muevas ni canceles un turno por tu cuenta ni ofrezcas "dejar los dos".
 - Si al crear el turno el horario ya está ocupado, ofrecé otros dos o tres sin pedir disculpas largas.
 - Escribí las horas siempre con minutos: "18:00", "18:30" (no "a las 18").

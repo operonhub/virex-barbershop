@@ -9,6 +9,7 @@ import { runAgent, type TurnInput } from "./run"
 import { readAgentConfig } from "./config"
 import { shouldHandOff } from "./handoff"
 import { createConversationQueue } from "./conversation-queue"
+import { recentConversationHistory } from "./conversation-history"
 import type { AgentActionKind, Conversation } from "@/lib/domain/types"
 
 /**
@@ -138,10 +139,7 @@ async function respondNow(conversationId: string): Promise<{ ok: boolean; reason
     return { ok: true }
   }
 
-  const history: TurnInput[] = thread.filter((m) => m.body.trim()).map((m) => ({
-    role: m.author === "cliente" ? "user" : "assistant",
-    text: m.author === "staff" ? `[Respondió una persona del equipo] ${m.body}` : m.body,
-  }))
+  const history: TurnInput[] = recentConversationHistory(s.messages, conv.id)
 
   const result = await runAgent({
     settings: s.agentSettings,

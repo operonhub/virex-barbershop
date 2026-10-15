@@ -156,12 +156,12 @@ export const memoryStore: Store = {
 
   async upsertConversation(incoming) {
     const s = state()
-    const found = s.conversations.find((c) => c.id === incoming.externalId)
+    const found = s.conversations.find((c) => c.externalId === incoming.externalId && c.accountExternalId === incoming.accountExternalId)
     if (found) return found
     const digits = incoming.participantHandle?.replace(/\D/g, "") ?? ""
     const byPhone = digits ? s.clients.find((cl) => cl.phone?.replace(/\D/g, "").endsWith(digits.slice(-10))) : undefined
     const conv = {
-      id: incoming.externalId,
+      id: newId("cv"),
       externalId: incoming.externalId,
       accountExternalId: incoming.accountExternalId,
       channel: incoming.channel,
@@ -186,8 +186,8 @@ export const memoryStore: Store = {
 
   async addMessage({ externalId, ...message }) {
     const s = state()
-    if (externalId && s.messages.some((m) => m.id === externalId)) return null
-    const id = externalId ?? newId("ms")
+    const id = externalId ? `${encodeURIComponent(message.conversationId)}:${encodeURIComponent(externalId)}` : newId("ms")
+    if (externalId && s.messages.some((m) => m.id === id || (m.id === externalId && m.conversationId === message.conversationId))) return null
     s.messages.push({ ...message, id })
     // En Postgres el feed del agente se deriva de los mensajes; acá se guarda aparte.
     if (message.author === "ia" && message.action) {

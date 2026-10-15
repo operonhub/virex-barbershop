@@ -435,7 +435,7 @@ export const postgresStore: Store = {
               ${digits.length >= 8
                 ? sql`(select id from clients where regexp_replace(coalesce(phone, ''), '\\D', '', 'g') like ${"%" + digits.slice(-10)} limit 1)`
                 : null})
-      on conflict (zernio_id) do update set participant_name = coalesce(excluded.participant_name, conversations.participant_name)
+      on conflict (zernio_account_id, zernio_id) do update set participant_name = coalesce(excluded.participant_name, conversations.participant_name)
       returning *`
     return toConversation(row)
   },
@@ -459,7 +459,7 @@ export const postgresStore: Store = {
     const rows = await sql`
       insert into messages (conversation_id, zernio_id, author, staff_id, body, action, action_ref, sent_at)
       values (${m.conversationId}, ${m.externalId ?? null}, ${m.author}, ${m.staffId}, ${m.body}, ${m.action}, ${m.actionRef}, ${m.sentAt})
-      on conflict (zernio_id) do nothing
+      on conflict (conversation_id, zernio_id) do nothing
       returning id`
     return rows.length ? { id: rows[0].id as string } : null
   },

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 /**
@@ -176,5 +177,27 @@ describe.skipIf(!url)("store de Postgres contra la base real", async () => {
     const msg = { externalId: `msg-${Date.now()}`, conversationId: conv.id, author: "cliente" as const, staffId: null, body: "hola", sentAt: new Date().toISOString(), action: null, actionRef: null }
     expect(await store.addMessage(msg)).not.toBeNull()
     expect(await store.addMessage(msg)).toBeNull()
+  })
+
+  it("mantiene separados los chats y mensajes si dos cuentas reutilizan ids de Zernio", async () => {
+    const suffix = randomUUID()
+    const externalId = `prueba-chat-${suffix}`
+    const accountA = `prueba-cuenta-a-${suffix}`
+    const accountB = `prueba-cuenta-b-${suffix}`
+    const [a, b] = await Promise.all([
+      store.upsertConversation({ externalId, accountExternalId: accountA, channel: "whatsapp", participantName: `${TAG} Cliente A`, participantHandle: null }),
+      store.upsertConversation({ externalId, accountExternalId: accountB, channel: "instagram", participantName: `${TAG} Cliente B`, participantHandle: null }),
+    ])
+    created.conversations.push(a.id, b.id)
+    expect(a.id).not.toBe(b.id)
+
+    const messageId = `prueba-mensaje-${suffix}`
+    const base = { externalId: messageId, author: "cliente" as const, staffId: null, sentAt: new Date().toISOString(), action: null, actionRef: null }
+    expect(await store.addMessage({ ...base, conversationId: a.id, body: "mensaje A" })).not.toBeNull()
+    expect(await store.addMessage({ ...base, conversationId: b.id, body: "mensaje B" })).not.toBeNull()
+    expect(await store.addMessage({ ...base, conversationId: a.id, body: "duplicado A" })).toBeNull()
+
+    const messages = (await store.snapshot()).messages.filter((m) => [a.id, b.id].includes(m.conversationId) && m.body.startsWith("mensaje "))
+    expect(messages.map((m) => [m.conversationId, m.body])).toEqual(expect.arrayContaining([[a.id, "mensaje A"], [b.id, "mensaje B"]]))
   })
 })

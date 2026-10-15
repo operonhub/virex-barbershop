@@ -13,7 +13,7 @@ await db.exec(`
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
   create role anon; create role authenticated;
 `)
-for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql", "0005_turnos_fijos.sql", "0006_historial.sql", "0007_intervalo_de_horarios.sql", "0008_vales_y_semana.sql"]) {
+for (const f of ["0001_core.sql", "0002_operacion.sql", "0003_endurecer.sql", "0004_cierre_de_caja.sql", "0005_turnos_fijos.sql", "0006_historial.sql", "0007_intervalo_de_horarios.sql", "0008_vales_y_semana.sql", "0009_scope_inbox_ids.sql", "0010_remove_global_inbox_uniques.sql"]) {
   await db.exec(readFileSync(`supabase/migrations/${f}`, "utf8"))
   console.log(`✓ ${f} aplicada`)
 }
@@ -98,4 +98,21 @@ await db.query(`insert into expenses (category, description, amount, method, sta
 console.log("✓ aceptó un vale con barbero");
 try { await db.query(`insert into expenses (category, description, amount, method) values ('regalo','x',1000,'efectivo')`); console.log("✗ ERROR: aceptó una categoría inventada"); process.exit(1) }
 catch { console.log("✓ rechazó una categoría de gasto inventada") }
+
+// 0009: ids opacos iguales en cuentas distintas nunca comparten conversación ni dedupe.
+const [{ id: inboxA }] = (await db.query(
+  `insert into conversations (zernio_id, zernio_account_id, channel, participant_name)
+   values ('collision-conversation','account-a','whatsapp','Cliente A') returning id`
+)).rows
+const [{ id: inboxB }] = (await db.query(
+  `insert into conversations (zernio_id, zernio_account_id, channel, participant_name)
+   values ('collision-conversation','account-b','instagram','Cliente B') returning id`
+)).rows
+if (inboxA === inboxB) { console.log("✗ ERROR: unió conversaciones de cuentas distintas"); process.exit(1) }
+await db.query(`insert into messages (conversation_id, zernio_id, author, body) values ($1,'collision-message','cliente','mensaje A')`, [inboxA])
+await db.query(`insert into messages (conversation_id, zernio_id, author, body) values ($1,'collision-message','cliente','mensaje B')`, [inboxB])
+try {
+  await db.query(`insert into messages (conversation_id, zernio_id, author, body) values ($1,'collision-message','cliente','duplicado A')`, [inboxA])
+  console.log("✗ ERROR: aceptó dos veces un mensaje del mismo chat"); process.exit(1)
+} catch { console.log("✓ aisló ids repetidos entre cuentas y deduplicó dentro del mismo chat") }
 await db.close()

@@ -4,6 +4,7 @@ import { PageBody, PageHeader, Panel } from "@/components/shell/page-header"
 import { DayTimeline } from "@/components/hoy/day-timeline"
 import { AgentLiveCard } from "@/components/hoy/agent-live-card"
 import { QuickAppointmentButton } from "@/components/hoy/quick-appointment"
+import { QuickChargeButton } from "@/components/caja/quick-charge-button"
 import { NewAppointmentButton } from "@/components/agenda/new-appointment-button"
 import { StatusPill } from "@/components/agenda/status"
 import { ChannelDot } from "@/components/brand/channel-icons"
@@ -84,6 +85,7 @@ export default async function HoyPage() {
               Ver agenda
             </Link>
             <QuickAppointmentButton staff={d.staff} services={d.services} clients={d.clients} />
+            <QuickChargeButton staff={d.staff} services={d.services} clients={d.clients} loyalty={d.loyalty} variant="outline" className="h-10 px-4" label="Cobro rápido" />
             <NewAppointmentButton />
           </>
         }
