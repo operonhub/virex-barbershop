@@ -9,6 +9,7 @@ import { runAgent, type TurnInput } from "./run"
 import { readAgentConfig } from "./config"
 import { shouldHandOff } from "./handoff"
 import { createConversationQueue } from "./conversation-queue"
+import { isStaleMessage } from "./stale"
 import { recentConversationHistory } from "./conversation-history"
 import type { AgentActionKind, Conversation } from "@/lib/domain/types"
 
@@ -104,6 +105,16 @@ async function respondNow(conversationId: string): Promise<{ ok: boolean; reason
   // persona, no hay nada que responder: Gemini rechaza con 400 un pedido que termina en turno del modelo.
   if (thread[thread.length - 1] !== last) return { ok: true }
   const now = await clockNow()
+
+  // Mensaje reenviado horas después (el panel no lo pudo guardar a tiempo): lo contesta una persona.
+  if (isStaleMessage(last.sentAt, now)) {
+    await store().updateConversation(conv.id, {
+      mode: "humano",
+      needsHuman: true,
+      handoffReason: "Mensaje recibido con demora: contestalo vos y después devolvéselo a la IA.",
+    })
+    return { ok: true }
+  }
 
   // Audio, foto o sticker llegan sin texto: la IA no tiene qué leer (y Gemini rechaza partes vacías con un 400).
   // Se le pide por favor que escriba; si insiste con otro mensaje sin texto, lo ve una persona.
