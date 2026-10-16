@@ -60,7 +60,20 @@ describe("recentConversationHistory", () => {
     ])
   })
 
-  it("después de 6 horas sin mensajes, la charla arranca de cero", () => {
+  it("los mensajes de ayer no entran, aunque haya sido hace pocas horas", () => {
+    const at = (m: Message, sentAt: string): Message => ({ ...m, sentAt })
+    const history = recentConversationHistory(
+      [
+        at(message("1", "chat-a", "cliente", "turno para hoy 23:30?"), "2026-10-16T02:00:00.000Z"), // 15/10 23:00 ARG
+        at(message("2", "chat-a", "ia", "Ya cerramos, ¿mañana?"), "2026-10-16T02:01:00.000Z"),
+        at(message("3", "chat-a", "cliente", "Turno"), "2026-10-16T03:30:00.000Z"), // 16/10 00:30 ARG
+      ],
+      "chat-a"
+    )
+    expect(history.map((turn) => turn.text)).toEqual(["Turno"])
+  })
+
+  it("después de 3 horas sin mensajes, la charla arranca de cero", () => {
     const at = (m: Message, sentAt: string): Message => ({ ...m, sentAt })
     const history = recentConversationHistory(
       [
