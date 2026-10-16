@@ -59,4 +59,19 @@ describe("recentConversationHistory", () => {
       { role: "assistant", text: "[Respondió una persona del equipo] Te lo reservo para mañana" },
     ])
   })
+
+  it("después de 6 horas sin mensajes, la charla arranca de cero", () => {
+    const at = (m: Message, sentAt: string): Message => ({ ...m, sentAt })
+    const history = recentConversationHistory(
+      [
+        at(message("1", "chat-a", "cliente", "corte y barba el sábado"), "2026-10-14T17:40:00.000Z"),
+        at(message("2", "chat-a", "ia", "Tengo 11:00, 12:30 o 15:00. ¿Cuál te sirve?"), "2026-10-14T17:41:00.000Z"),
+        at(message("3", "chat-a", "cliente", "Hola"), "2026-10-16T00:31:00.000Z"),
+        at(message("4", "chat-a", "cliente", "Hola"), "2026-10-16T00:31:05.000Z"),
+      ],
+      "chat-a"
+    )
+    expect(history.map((turn) => turn.text)).toEqual(["Hola", "Hola"])
+  })
 })
+
