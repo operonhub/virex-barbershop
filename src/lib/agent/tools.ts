@@ -173,18 +173,6 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
       if (!svc || !validDay(input.fecha)) return fail("Servicio o fecha inválidos.")
       if (input.fecha < today) return fail("Esa fecha ya pasó.")
       if (input.fecha > addDays(today, 45)) return fail("Sólo se agenda con hasta 45 días de anticipación.")
-      if (!isOpen(input.fecha)) {
-        let next = addDays(input.fecha, 1)
-        while (!isOpen(next)) next = addDays(next, 1)
-        return { result: { ok: true, cerrado: true, dia: formatDayLong(input.fecha), proximo_dia_abierto: next } }
-      }
-      const asked = input.barbero_id === "cualquiera" ? undefined : member(input.barbero_id)
-      if (asked && !worksOn(asked, input.fecha)) {
-        return {
-          result: { ok: true, dia: formatDayLong(input.fecha), barbero: asked.name, barbero_no_atiende_ese_dia: true, horarios: [] },
-          action: "consulta_respondida",
-        }
-      }
       const slotsOn = (day: string) => {
         const base = { day, service: svc, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin }
         if (input.barbero_id === "cualquiera") {
@@ -196,6 +184,28 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
         }
         const m = member(input.barbero_id)
         return m ? freeSlots({ ...base, staff: m }).map((t) => ({ hora: t, barbero: m.name, barbero_id: m.id })) : []
+      }
+      // Día cerrado o sin ese barbero: directamente el próximo día abierto con horarios reales, para
+      // que el agente ofrezca "el martes a las 11:00" y no "el domingo… ojo que no abrimos".
+      if (!isOpen(input.fecha)) {
+        return {
+          result: { ok: true, cerrado: true, dia: formatDayLong(input.fecha), horarios: [], proximo_dia_con_lugar: nextDayWithRoom(input.fecha, slotsOn) },
+          action: "consulta_respondida",
+        }
+      }
+      const asked = input.barbero_id === "cualquiera" ? undefined : member(input.barbero_id)
+      if (asked && !worksOn(asked, input.fecha)) {
+        return {
+          result: {
+            ok: true,
+            dia: formatDayLong(input.fecha),
+            barbero: asked.name,
+            barbero_no_atiende_ese_dia: true,
+            horarios: [],
+            proximo_dia_con_lugar: nextDayWithRoom(input.fecha, slotsOn),
+          },
+          action: "consulta_respondida",
+        }
       }
       const slots = slotsOn(input.fecha)
       // Primero la franja que pidió el cliente; después, pocas opciones y

@@ -27,11 +27,11 @@ function summarize(result: unknown): string {
   if (!result || typeof result !== "object") return String(result)
   const r = result as Record<string, unknown>
   if (r.ok === false) return `error: ${String(r.error ?? r.motivo ?? "sin detalle").slice(0, 120)}`
-  if (r.cerrado) return `cerrado (próximo abierto ${String(r.proximo_dia_abierto)})`
   if (Array.isArray(r.horarios)) {
     const horas = (r.horarios as { hora?: string; barbero?: string }[]).map((h) => (h.barbero ? `${h.hora} ${h.barbero}` : h.hora))
     const extra = r.proximo_dia_con_lugar ? ` · próximo con lugar: ${JSON.stringify(r.proximo_dia_con_lugar).slice(0, 160)}` : ""
-    return (horas.length ? horas.join(", ") : "sin horarios") + extra
+    const empty = r.cerrado ? "cerrado" : r.barbero_no_atiende_ese_dia ? "el barbero no atiende ese día" : "sin horarios"
+    return (horas.length ? horas.join(", ") : empty) + extra
   }
   return "ok"
 }

@@ -22,4 +22,10 @@ describe("registro de herramientas", () => {
   it("anota los errores", () => {
     expect(traceTool("crear_turno", { hora: "18:00" }, { ok: false, error: "Ese horario se acaba de ocupar." }, names)).toContain("error: Ese horario")
   })
+
+  it("en un día cerrado anota el próximo día con lugar", () => {
+    const line = traceTool("consultar_disponibilidad", { fecha: "2026-10-18" }, { ok: true, cerrado: true, horarios: [], proximo_dia_con_lugar: { fecha: "2026-10-20", horarios: [{ hora: "11:00" }] } }, names)
+    expect(line).toContain("cerrado · próximo con lugar")
+    expect(line).toContain("2026-10-20")
+  })
 })
