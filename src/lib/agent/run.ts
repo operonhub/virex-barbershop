@@ -3,6 +3,7 @@ import { estimateCostUsd, readAgentConfig, readFallbacks } from "./config"
 import { providerFor } from "./providers"
 import type { AgentEffort, ToolResult, TurnInput, Usage } from "./providers/types"
 import { executeTool, toolDefinitions, type ToolContext } from "./tools"
+import { traceTool } from "./trace"
 import type { AgentActionKind, AgentSettings, Service, Staff } from "@/lib/domain/types"
 
 /**
@@ -20,7 +21,8 @@ export type { TurnInput } from "./providers/types"
 export interface AgentRunResult {
   ok: true
   reply: string
-  actions: { tool: string; action?: AgentActionKind; isError?: boolean }[]
+  /** `detail`: con qué datos se llamó y qué devolvió (`trace.ts`), para entender una respuesta rara. */
+  actions: { tool: string; action?: AgentActionKind; isError?: boolean; detail?: string }[]
   clientId: string | null
   usage: Usage
   provider: string
@@ -79,6 +81,10 @@ async function runWith(
   })
 
   const actions: AgentRunResult["actions"] = []
+  const names = {
+    services: Object.fromEntries(args.services.map((s) => [s.id, s.name])),
+    staff: Object.fromEntries(args.staff.map((s) => [s.id, s.name])),
+  }
   const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
   let clientId = args.toolContext.clientId
   let results: ToolResult[] | undefined
@@ -108,7 +114,7 @@ async function runWith(
     for (const call of step.calls) {
       const outcome = await executeTool(call.name, call.input, { ...args.toolContext, clientId, history: args.history })
       if (outcome.clientId) clientId = outcome.clientId
-      actions.push({ tool: call.name, action: outcome.action, isError: outcome.isError })
+      actions.push({ tool: call.name, action: outcome.action, isError: outcome.isError, detail: traceTool(call.name, call.input, outcome.result, names) })
       results.push({ callId: call.id, name: call.name, content: outcome.result, isError: outcome.isError })
     }
   }

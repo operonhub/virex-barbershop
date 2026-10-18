@@ -142,6 +142,18 @@ export function toolDefinitions(services: Service[], staff: Staff[]): ToolSpec[]
   ]
 }
 
+/** El próximo día abierto (hasta 10 días) con lugar, con sus primeros horarios. `null` si no hay. */
+function nextDayWithRoom<T>(from: string, slotsOn: (day: string) => T[]) {
+  let day = from
+  for (let i = 0; i < 10; i++) {
+    day = addDays(day, 1)
+    if (!isOpen(day)) continue
+    const found = slotsOn(day)
+    if (found.length) return { fecha: day, dia: formatDayLong(day), horarios: found.slice(0, 6) }
+  }
+  return null
+}
+
 const fail = (message: string): ToolOutcome => ({ result: { ok: false, error: message }, isError: true })
 
 const NOT_AGREED =
@@ -173,18 +185,19 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           action: "consulta_respondida",
         }
       }
-      const base = { day: input.fecha, service: svc, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin }
-      const slots =
-        input.barbero_id === "cualquiera"
-          ? freeSlotsAnyStaff({ ...base, staff: s.staff.filter((x) => x.active) }).map((x) => ({
-              hora: x.time,
-              barbero: member(x.staffId)!.name,
-              barbero_id: x.staffId,
-            }))
-          : (() => {
-              const m = member(input.barbero_id)
-              return m ? freeSlots({ ...base, staff: m }).map((t) => ({ hora: t, barbero: m.name, barbero_id: m.id })) : []
-            })()
+      const slotsOn = (day: string) => {
+        const base = { day, service: svc, appointments: s.appointments, now: ctx.now, stepMin: s.shopSettings.slotStepMin }
+        if (input.barbero_id === "cualquiera") {
+          return freeSlotsAnyStaff({ ...base, staff: s.staff.filter((x) => x.active) }).map((x) => ({
+            hora: x.time,
+            barbero: member(x.staffId)!.name,
+            barbero_id: x.staffId,
+          }))
+        }
+        const m = member(input.barbero_id)
+        return m ? freeSlots({ ...base, staff: m }).map((t) => ({ hora: t, barbero: m.name, barbero_id: m.id })) : []
+      }
+      const slots = slotsOn(input.fecha)
       // Primero la franja que pidió el cliente; después, pocas opciones y
       // espaciadas (un chat no es una grilla). Sin el filtro, las 8 primeras
       // son todas de la mañana y "a la tarde" nunca encuentra lugar.
@@ -204,6 +217,9 @@ export async function executeTool(name: string, input: Record<string, unknown>, 
           ...(from && !inRange.length
             ? { sin_lugar_en_esa_franja: true, horarios_antes: slots.filter((x) => x.hora < from).slice(-3) }
             : {}),
+          // Día sin ningún lugar: el próximo día ABIERTO con horarios reales. Sin esto, el modelo
+          // ofrecía "mañana domingo" (cerrado) o se quedaba sin opciones.
+          ...(!slots.length ? { proximo_dia_con_lugar: nextDayWithRoom(input.fecha, slotsOn) } : {}),
         },
         action: "consulta_respondida",
       }

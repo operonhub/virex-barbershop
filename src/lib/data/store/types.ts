@@ -98,7 +98,7 @@ export interface AgentRunRecord {
   model: string
   ok: boolean
   failureReason: string | null
-  tools: { tool: string; action?: string; isError?: boolean }[]
+  tools: { tool: string; action?: string; isError?: boolean; detail?: string }[]
   usage: { input: number; output: number; cacheRead: number; cacheWrite: number }
   costUsd: number | null
 }
